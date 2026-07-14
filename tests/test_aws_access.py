@@ -31,6 +31,24 @@ def load_inventory_module():
 
 
 class AwsAccessTests(unittest.TestCase):
+    def test_pgbouncer_configure_uses_generated_file_as_guard(self) -> None:
+        tasks = yaml.safe_load(
+            (ROOT / "infra/ansible/roles/pgbouncer/tasks/main.yml").read_text()
+        )
+        dependencies = next(
+            task
+            for task in tasks
+            if task["name"] == "Install PgBouncer build dependencies"
+        )
+        self.assertIn("pandoc", dependencies["ansible.builtin.apt"]["name"])
+        configure = next(
+            task for task in tasks if task["name"] == "Configure PgBouncer source"
+        )
+        self.assertEqual(
+            configure["ansible.builtin.command"]["creates"],
+            "/tmp/pgbouncer-{{ pgbouncer_version }}/config.mak",
+        )
+
     def test_postgres_connection_limit_covers_focused_direct_runs(self) -> None:
         template = (
             ROOT

@@ -14,7 +14,7 @@
 
 - name: Install PgBouncer build dependencies
   ansible.builtin.apt:
-    name: [build-essential, ca-certificates, libevent-dev, libssl-dev, libsystemd-dev, pkg-config]
+    name: [build-essential, ca-certificates, libevent-dev, libssl-dev, libsystemd-dev, pandoc, pkg-config]
     state: present
     update_cache: true
 
@@ -36,7 +36,7 @@
   ansible.builtin.command:
     cmd: "./configure --prefix=/opt/pgbouncer/{{ pgbouncer_version }}"
     chdir: "/tmp/pgbouncer-{{ pgbouncer_version }}"
-    creates: "/tmp/pgbouncer-{{ pgbouncer_version }}/Makefile"
+    creates: "/tmp/pgbouncer-{{ pgbouncer_version }}/config.mak"
 
 - name: Build PgBouncer
   ansible.builtin.command:
