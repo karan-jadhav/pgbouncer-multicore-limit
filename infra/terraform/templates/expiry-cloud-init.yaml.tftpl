@@ -1,0 +1,6 @@
+#cloud-config
+package_update: false
+package_upgrade: false
+
+runcmd:
+  - [systemd-run, "--unit=experiment-expiry", "--on-active=${max_runtime_hours}h", /usr/sbin/shutdown, -h, now]

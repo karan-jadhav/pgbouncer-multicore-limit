@@ -1,0 +1,6 @@
+local   all             postgres                                peer
+local   all             all                                     scram-sha-256
+hostssl all             all             {{ hostvars[groups['role_pgbouncer'][0]].private_ip_address }}/32 scram-sha-256
+{% for host in groups['role_loadgen_api'] + groups['role_loadgen_export'] %}
+hostssl all             all             {{ hostvars[host].private_ip_address }}/32 scram-sha-256
+{% endfor %}

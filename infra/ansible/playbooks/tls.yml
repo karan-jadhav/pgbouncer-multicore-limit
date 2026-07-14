@@ -1,0 +1,99 @@
+---
+- name: Create a short-lived project-local certificate authority
+  hosts: localhost
+  gather_facts: false
+  vars:
+    postgres_ip: "{{ hostvars[groups['role_postgres'][0]].private_ip_address }}"
+    pgbouncer_ip: "{{ hostvars[groups['role_pgbouncer'][0]].private_ip_address }}"
+  tasks:
+    - name: Create local certificate directory
+      ansible.builtin.file:
+        path: "{{ tls_local_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Generate CA private key
+      ansible.builtin.command:
+        argv: [openssl, genrsa, -out, "{{ tls_local_dir }}/ca.key", "4096"]
+        creates: "{{ tls_local_dir }}/ca.key"
+      no_log: true
+
+    - name: Generate CA certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -x509
+          - -new
+          - -key
+          - "{{ tls_local_dir }}/ca.key"
+          - -sha256
+          - -days
+          - "7"
+          - -subj
+          - /CN=pgbouncer-multicore-limit-ca
+          - -out
+          - "{{ tls_local_dir }}/ca.crt"
+        creates: "{{ tls_local_dir }}/ca.crt"
+
+    - name: Generate server private keys
+      ansible.builtin.command:
+        argv: [openssl, genrsa, -out, "{{ tls_local_dir }}/{{ item }}.key", "3072"]
+        creates: "{{ tls_local_dir }}/{{ item }}.key"
+      loop: [postgres, pgbouncer]
+      no_log: true
+
+    - name: Generate PostgreSQL certificate request
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -new
+          - -key
+          - "{{ tls_local_dir }}/postgres.key"
+          - -subj
+          - /CN=postgres
+          - -addext
+          - "subjectAltName=DNS:postgres,IP:{{ postgres_ip }}"
+          - -out
+          - "{{ tls_local_dir }}/postgres.csr"
+        creates: "{{ tls_local_dir }}/postgres.csr"
+
+    - name: Generate PgBouncer certificate request
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -new
+          - -key
+          - "{{ tls_local_dir }}/pgbouncer.key"
+          - -subj
+          - /CN=pgbouncer
+          - -addext
+          - "subjectAltName=DNS:pgbouncer,IP:{{ pgbouncer_ip }}"
+          - -out
+          - "{{ tls_local_dir }}/pgbouncer.csr"
+        creates: "{{ tls_local_dir }}/pgbouncer.csr"
+
+    - name: Sign server certificates
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -req
+          - -in
+          - "{{ tls_local_dir }}/{{ item }}.csr"
+          - -CA
+          - "{{ tls_local_dir }}/ca.crt"
+          - -CAkey
+          - "{{ tls_local_dir }}/ca.key"
+          - -CAcreateserial
+          - -days
+          - "7"
+          - -sha256
+          - -copy_extensions
+          - copy
+          - -out
+          - "{{ tls_local_dir }}/{{ item }}.crt"
+        creates: "{{ tls_local_dir }}/{{ item }}.crt"
+      loop: [postgres, pgbouncer]

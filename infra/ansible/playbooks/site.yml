@@ -1,0 +1,45 @@
+---
+- name: Validate required experiment secrets
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require non-default passwords
+      ansible.builtin.assert:
+        that:
+          - bench_password != 'CHANGE_ME'
+          - bench_backend_password != 'CHANGE_ME'
+          - metrics_password != 'CHANGE_ME'
+          - pgbouncer_admin_password != 'CHANGE_ME'
+          - bench_password is match('^[A-Za-z0-9._~-]+$')
+          - bench_backend_password is match('^[A-Za-z0-9._~-]+$')
+          - metrics_password is match('^[A-Za-z0-9._~-]+$')
+          - pgbouncer_admin_password is match('^[A-Za-z0-9._~-]+$')
+        fail_msg: Export the four benchmark password environment variables before configuring AWS.
+
+- name: Generate ephemeral experiment certificates
+  ansible.builtin.import_playbook: tls.yml
+
+- name: Configure every experiment host
+  hosts: all:!localhost
+  become: true
+  roles:
+    - common
+    - metrics
+
+- name: Configure PostgreSQL
+  hosts: role_postgres
+  become: true
+  roles:
+    - postgres
+
+- name: Configure PgBouncer
+  hosts: role_pgbouncer
+  become: true
+  roles:
+    - pgbouncer
+
+- name: Configure load generators
+  hosts: role_loadgen_api:role_loadgen_export
+  become: true
+  roles:
+    - loadgen

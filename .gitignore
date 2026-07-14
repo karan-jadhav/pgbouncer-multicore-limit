@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Rust
+target/
+
+# Terraform
+.terraform/
+infra/ansible/inventory/generated.yml
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+.local/
+*.pem
+*.key
+
+# Experiment output
+results/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store

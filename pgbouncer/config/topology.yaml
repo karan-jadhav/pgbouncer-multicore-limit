@@ -1,0 +1,14 @@
+topologies:
+  shared:
+    ports:
+      6432:
+        process_ids: [1, 2, 3, 4]
+        total_pool_budget: 128
+  isolated:
+    ports:
+      6432:
+        process_ids: [1, 2, 3]
+        total_pool_budget: 96
+      6433:
+        process_ids: [4]
+        total_pool_budget: 32

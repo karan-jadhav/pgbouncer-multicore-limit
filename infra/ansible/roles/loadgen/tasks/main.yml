@@ -1,0 +1,32 @@
+---
+- name: Create load generator installation directory
+  ansible.builtin.file:
+    path: /opt/pgbouncer-experiment/bin
+    state: directory
+    mode: "0755"
+
+- name: Install release load generator binary
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../loadgen/target/release/pgbouncer-loadgen"
+    dest: /opt/pgbouncer-experiment/bin/loadgen
+    mode: "0755"
+
+- name: Install project CA for load generator verification
+  ansible.builtin.copy:
+    src: "{{ tls_local_dir }}/ca.crt"
+    dest: /opt/pgbouncer-experiment/ca.crt
+    mode: "0644"
+
+- name: Create load generator systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/loadgen.service.d
+    state: directory
+    mode: "0755"
+
+- name: Configure load generator file limits
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/loadgen.service.d/limits.conf
+    mode: "0644"
+    content: |
+      [Service]
+      LimitNOFILE=200000

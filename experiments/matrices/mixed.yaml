@@ -1,0 +1,8 @@
+name: mixed-workload
+repeats: 3
+defaults: {duration: 180, warmup: 60, connections: 256, tls_mode: verify-full}
+runs:
+  - {id: mixed-p1, mode: mixed, pgbouncer_processes: 1, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: mixed-p2, mode: mixed, pgbouncer_processes: 2, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: mixed-p4, mode: mixed, pgbouncer_processes: 4, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: mixed-p8, mode: mixed, pgbouncer_processes: 8, args: {api_target_rate: 8000, export_concurrency: 4}}

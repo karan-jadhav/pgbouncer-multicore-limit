@@ -1,0 +1,165 @@
+---
+- name: Create PgBouncer group
+  ansible.builtin.group:
+    name: pgbouncer
+    system: true
+
+- name: Create PgBouncer user
+  ansible.builtin.user:
+    name: pgbouncer
+    group: pgbouncer
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Install PgBouncer build dependencies
+  ansible.builtin.apt:
+    name: [build-essential, ca-certificates, libevent-dev, libssl-dev, libsystemd-dev, pkg-config]
+    state: present
+    update_cache: true
+
+- name: Download verified PgBouncer source
+  ansible.builtin.get_url:
+    url: "https://www.pgbouncer.org/downloads/files/{{ pgbouncer_version }}/pgbouncer-{{ pgbouncer_version }}.tar.gz"
+    dest: "/tmp/pgbouncer-{{ pgbouncer_version }}.tar.gz"
+    checksum: "sha256:{{ pgbouncer_sha256 }}"
+    mode: "0644"
+
+- name: Extract PgBouncer source
+  ansible.builtin.unarchive:
+    src: "/tmp/pgbouncer-{{ pgbouncer_version }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/pgbouncer-{{ pgbouncer_version }}/configure"
+
+- name: Configure PgBouncer source
+  ansible.builtin.command:
+    cmd: "./configure --prefix=/opt/pgbouncer/{{ pgbouncer_version }}"
+    chdir: "/tmp/pgbouncer-{{ pgbouncer_version }}"
+    creates: "/tmp/pgbouncer-{{ pgbouncer_version }}/Makefile"
+
+- name: Build PgBouncer
+  ansible.builtin.command:
+    cmd: make -j
+    chdir: "/tmp/pgbouncer-{{ pgbouncer_version }}"
+    creates: "/tmp/pgbouncer-{{ pgbouncer_version }}/pgbouncer"
+
+- name: Install PgBouncer
+  ansible.builtin.command:
+    cmd: make install
+    chdir: "/tmp/pgbouncer-{{ pgbouncer_version }}"
+    creates: "/opt/pgbouncer/{{ pgbouncer_version }}/bin/pgbouncer"
+
+- name: Point current symlink to pinned PgBouncer
+  ansible.builtin.file:
+    src: "/opt/pgbouncer/{{ pgbouncer_version }}"
+    dest: /opt/pgbouncer/current
+    state: link
+
+- name: Create PgBouncer directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: pgbouncer
+    group: pgbouncer
+    mode: "0750"
+  loop:
+    - /etc/pgbouncer
+    - /etc/pgbouncer/tls
+    - /var/log/pgbouncer
+
+- name: Install PgBouncer TLS files
+  ansible.builtin.copy:
+    src: "{{ tls_local_dir }}/{{ item.src }}"
+    dest: "/etc/pgbouncer/tls/{{ item.dest }}"
+    owner: pgbouncer
+    group: pgbouncer
+    mode: "{{ item.mode }}"
+  loop:
+    - {src: ca.crt, dest: ca.crt, mode: "0644"}
+    - {src: pgbouncer.crt, dest: server.crt, mode: "0644"}
+    - {src: pgbouncer.key, dest: server.key, mode: "0600"}
+  notify: Restart PgBouncer
+
+- name: Install PgBouncer authentication file
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../../pgbouncer/config/users.txt.j2"
+    dest: /etc/pgbouncer/users.txt
+    owner: pgbouncer
+    group: pgbouncer
+    mode: "0600"
+  no_log: true
+  notify: Restart PgBouncer
+
+- name: Read physical CPU representatives
+  ansible.builtin.shell: lscpu -p=CPU,CORE,SOCKET | awk -F, '!/^#/ && !seen[$2 FS $3]++ {print $1}'
+  args:
+    executable: /bin/bash
+  register: physical_cpus
+  changed_when: false
+
+- name: Verify sufficient physical cores
+  ansible.builtin.assert:
+    that: physical_cpus.stdout_lines | length >= pgbouncer_reserved_physical_cores + 8
+    fail_msg: PgBouncer host does not expose enough distinct physical cores for eight pinned processes.
+
+- name: Install PgBouncer systemd template
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../pgbouncer/systemd/pgbouncer@.service"
+    dest: /etc/systemd/system/pgbouncer@.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Create per-instance systemd drop-in directories
+  ansible.builtin.file:
+    path: "/etc/systemd/system/pgbouncer@{{ item }}.service.d"
+    state: directory
+    mode: "0755"
+  loop: "{{ range(1, 9) | list }}"
+
+- name: Pin each PgBouncer instance to a distinct physical core
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/pgbouncer@{{ item }}.service.d/cpu.conf"
+    mode: "0644"
+    content: |
+      [Service]
+      CPUAffinity={{ physical_cpus.stdout_lines[pgbouncer_reserved_physical_cores + item - 1] }}
+  loop: "{{ range(1, 9) | list }}"
+  notify: Reload systemd
+
+- name: Render PgBouncer instance configurations
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../../pgbouncer/config/base.ini.j2"
+    dest: "/etc/pgbouncer/pgbouncer-{{ item }}.ini"
+    owner: pgbouncer
+    group: pgbouncer
+    mode: "0640"
+  vars:
+    peer_id: "{{ item }}"
+    listen_port: "{{ 6433 if pgbouncer_topology == 'isolated' and item == 4 else 6432 }}"
+    pool_size: "{{ total_pool_budget // pgbouncer_process_count }}"
+    postgres_host: "{{ hostvars[groups['role_postgres'][0]].private_ip_address }}"
+    client_tls_sslmode: "{{ pgbouncer_client_tls_sslmode }}"
+    server_tls_sslmode: "{{ pgbouncer_server_tls_sslmode }}"
+    tls_ca_file: /etc/pgbouncer/tls/ca.crt
+    tls_cert_file: /etc/pgbouncer/tls/server.crt
+    tls_key_file: /etc/pgbouncer/tls/server.key
+    peers: "{{ range(1, pgbouncer_process_count + 1) | list }}"
+  loop: "{{ range(1, pgbouncer_process_count + 1) | list }}"
+  notify: Restart PgBouncer
+
+- name: Enable active PgBouncer instances
+  ansible.builtin.systemd:
+    name: "pgbouncer@{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ range(1, pgbouncer_process_count + 1) | list }}"
+
+- name: Stop inactive PgBouncer instances
+  ansible.builtin.systemd:
+    name: "pgbouncer@{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ range(pgbouncer_process_count + 1, 9) | list }}"
+  failed_when: false

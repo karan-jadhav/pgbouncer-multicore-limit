@@ -1,0 +1,19 @@
+---
+- name: Create collector directory
+  ansible.builtin.file:
+    path: /opt/pgbouncer-experiment/collectors
+    state: directory
+    mode: "0755"
+
+- name: Install raw collectors
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/pgbouncer-experiment/collectors/{{ item | basename }}"
+    mode: "0755"
+  loop:
+    - "{{ playbook_dir }}/../../../monitoring/collectors/host.sh"
+    - "{{ playbook_dir }}/../../../monitoring/collectors/clock.sh"
+    - "{{ playbook_dir }}/../../../monitoring/collectors/process.py"
+    - "{{ playbook_dir }}/../../../monitoring/collectors/postgres.sh"
+    - "{{ playbook_dir }}/../../../monitoring/collectors/pgbouncer.sh"
+    - "{{ playbook_dir }}/../../../monitoring/collectors/perf.sh"

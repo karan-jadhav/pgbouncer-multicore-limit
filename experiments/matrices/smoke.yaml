@@ -1,0 +1,45 @@
+name: smoke
+repeats: 1
+defaults:
+  duration: 3
+  warmup: 1
+  tls_mode: disable
+  seed: 1
+validation:
+  minimum_completed: 1
+  maximum_failures: 0
+  maximum_timeouts: 0
+  minimum_completion_ratio: 0.99
+runs:
+  - id: validate-direct
+    mode: validate
+    endpoint: postgres
+    args:
+      expected_rows: 100000
+  - id: api-one
+    mode: api
+    endpoint: pgbouncer
+    topology: shared
+    pgbouncer_processes: 1
+    args:
+      model: closed-loop
+      connections: 4
+      id_range_end: 100000
+  - id: api-four-open
+    mode: api
+    endpoint: pgbouncer
+    topology: shared
+    pgbouncer_processes: 4
+    args:
+      model: open-loop
+      connections: 8
+      target_rate: 100
+      id_range_end: 100000
+  - id: export
+    mode: export
+    endpoint: pgbouncer
+    topology: shared
+    pgbouncer_processes: 4
+    args:
+      concurrency: 1
+      result_limit_bytes: 1048576

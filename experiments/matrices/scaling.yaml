@@ -1,0 +1,14 @@
+name: multicore-scaling
+repeats: 3
+randomize: true
+randomization_seed: 2001
+defaults: {duration: 180, warmup: 60, model: open-loop, connections: 256, id_range_end: 20000000, tls_mode: verify-full}
+runs:
+  - {id: api-p1-r80, mode: api, pgbouncer_processes: 1, total_pool_budget: 128, args: {target_rate: 8000}}
+  - {id: api-p2-r80, mode: api, pgbouncer_processes: 2, total_pool_budget: 128, args: {target_rate: 8000}}
+  - {id: api-p4-r80, mode: api, pgbouncer_processes: 4, total_pool_budget: 128, args: {target_rate: 8000}}
+  - {id: api-p8-r80, mode: api, pgbouncer_processes: 8, total_pool_budget: 128, args: {target_rate: 8000}}
+  - {id: api-p1-r150, mode: api, pgbouncer_processes: 1, total_pool_budget: 128, args: {target_rate: 15000}}
+  - {id: api-p2-r150, mode: api, pgbouncer_processes: 2, total_pool_budget: 128, args: {target_rate: 15000}}
+  - {id: api-p4-r150, mode: api, pgbouncer_processes: 4, total_pool_budget: 128, args: {target_rate: 15000}}
+  - {id: api-p8-r150, mode: api, pgbouncer_processes: 8, total_pool_budget: 128, args: {target_rate: 15000}}

@@ -1,0 +1,9 @@
+name: tls-attribution
+repeats: 3
+randomize: true
+defaults: {duration: 180, warmup: 60, connections: 256, id_range_end: 20000000}
+runs:
+  - {id: tls-none, mode: api, pgbouncer_processes: 1, client_tls_sslmode: disable, server_tls_sslmode: disable, args: {model: open-loop, target_rate: 10000, tls_mode: disable}}
+  - {id: tls-client, mode: api, pgbouncer_processes: 1, client_tls_sslmode: require, server_tls_sslmode: disable, args: {model: open-loop, target_rate: 10000, tls_mode: verify-full}}
+  - {id: tls-server, mode: api, pgbouncer_processes: 1, client_tls_sslmode: disable, server_tls_sslmode: verify-full, args: {model: open-loop, target_rate: 10000, tls_mode: disable}}
+  - {id: tls-both, mode: api, pgbouncer_processes: 1, client_tls_sslmode: require, server_tls_sslmode: verify-full, args: {model: open-loop, target_rate: 10000, tls_mode: verify-full}}

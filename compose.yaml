@@ -1,0 +1,106 @@
+name: pgbouncer-multicore-limit
+
+services:
+  certgen:
+    build:
+      context: .
+      dockerfile: infra/local/certs/Dockerfile
+    volumes:
+      - experiment-certs:/certs
+    restart: "no"
+
+  postgres:
+    image: postgres:18.4-bookworm
+    environment:
+      POSTGRES_DB: bench
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-postgres-password}
+      BENCH_PASSWORD: ${BENCH_PASSWORD:-bench-password}
+      BENCH_BACKEND_PASSWORD: ${BENCH_BACKEND_PASSWORD:-bench-backend-password}
+      METRICS_PASSWORD: ${METRICS_PASSWORD:-metrics-password}
+      LOCAL_DATASET_ROWS: ${LOCAL_DATASET_ROWS:-100000}
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - ssl=${POSTGRES_SSL:-off}
+      - -c
+      - ssl_ca_file=/certs/ca.crt
+      - -c
+      - ssl_cert_file=/certs/postgres.crt
+      - -c
+      - ssl_key_file=/certs/postgres.key
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/config/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./postgres:/project/postgres:ro
+      - ./postgres/docker-init/01-init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+      - experiment-certs:/certs:ro
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bench"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    shm_size: 512mb
+
+  pgbouncer:
+    build:
+      context: .
+      dockerfile: pgbouncer/Dockerfile
+      args:
+        PGBOUNCER_VERSION: "1.25.2"
+        PGBOUNCER_SHA256: "924ad35113fd0a71c8e2dbe85b5d03445532e2b7b37a9f8a48983beea238b332"
+    environment:
+      PGBOUNCER_PROCESSES: ${PGBOUNCER_PROCESSES:-4}
+      PGBOUNCER_TOPOLOGY: ${PGBOUNCER_TOPOLOGY:-shared}
+      TOTAL_POOL_BUDGET: ${TOTAL_POOL_BUDGET:-128}
+      BENCH_PASSWORD: ${BENCH_PASSWORD:-bench-password}
+      BENCH_BACKEND_PASSWORD: ${BENCH_BACKEND_PASSWORD:-bench-backend-password}
+      METRICS_PASSWORD: ${METRICS_PASSWORD:-metrics-password}
+      PGBOUNCER_ADMIN_PASSWORD: ${PGBOUNCER_ADMIN_PASSWORD:-pgbouncer-admin-password}
+      CLIENT_TLS_SSLMODE: ${CLIENT_TLS_SSLMODE:-disable}
+      SERVER_TLS_SSLMODE: ${SERVER_TLS_SSLMODE:-disable}
+      PGBOUNCER_PEERING: ${PGBOUNCER_PEERING:-1}
+    ports:
+      - "6432:6432"
+      - "6433:6433"
+    volumes:
+      - pgbouncer-run:/run/pgbouncer
+      - experiment-certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=$${BENCH_PASSWORD} pg_isready -h 127.0.0.1 -p 6432 -U bench_login -d bench"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  loadgen:
+    build:
+      context: .
+      dockerfile: loadgen/Dockerfile
+    profiles: ["tools"]
+    environment:
+      BENCH_PASSWORD: ${BENCH_PASSWORD:-bench-password}
+      LOCAL_DATASET_ROWS: ${LOCAL_DATASET_ROWS:-100000}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    volumes:
+      - ./results:/results
+      - experiment-certs:/certs:ro
+    entrypoint: ["/usr/local/bin/loadgen"]
+
+volumes:
+  postgres-data:
+  pgbouncer-run:
+  experiment-certs:

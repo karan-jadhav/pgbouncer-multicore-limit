@@ -1,0 +1,7 @@
+name: cancellation
+repeats: 3
+defaults: {duration: 30, warmup: 0, tls_mode: verify-full}
+runs:
+  - {id: cancel-one, mode: cancel, pgbouncer_processes: 1, args: {count: 100}}
+  - {id: cancel-four-no-peering, mode: cancel, pgbouncer_processes: 4, peering_enabled: false, args: {count: 100}}
+  - {id: cancel-four-peering, mode: cancel, pgbouncer_processes: 4, args: {count: 100}}

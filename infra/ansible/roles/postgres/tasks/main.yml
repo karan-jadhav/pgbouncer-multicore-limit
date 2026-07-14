@@ -1,0 +1,105 @@
+---
+- name: Install PostgreSQL repository key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/keyrings/postgresql.asc
+    mode: "0644"
+
+- name: Configure PostgreSQL Apt repository
+  ansible.builtin.deb822_repository:
+    name: pgdg
+    types: [deb]
+    uris: https://apt.postgresql.org/pub/repos/apt
+    suites: ["{{ ansible_distribution_release }}-pgdg"]
+    components: [main]
+    signed_by: /usr/share/keyrings/postgresql.asc
+    state: present
+
+- name: Install PostgreSQL packages
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgres_version }}"
+      - "postgresql-contrib-{{ postgres_version }}"
+    state: present
+    update_cache: true
+
+- name: Create experiment SQL directory
+  ansible.builtin.file:
+    path: /opt/pgbouncer-experiment/postgres
+    state: directory
+    mode: "0755"
+
+- name: Install experiment SQL files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/pgbouncer-experiment/postgres/{{ item | basename }}"
+    mode: "0644"
+  loop:
+    - "{{ playbook_dir }}/../../../postgres/schema.sql"
+    - "{{ playbook_dir }}/../../../postgres/generate.sql"
+    - "{{ playbook_dir }}/../../../postgres/validate.sql"
+    - "{{ playbook_dir }}/../../../postgres/warm.sql"
+
+- name: Install PostgreSQL TLS files
+  ansible.builtin.copy:
+    src: "{{ tls_local_dir }}/{{ item.src }}"
+    dest: "/etc/postgresql/{{ postgres_version }}/main/{{ item.dest }}"
+    owner: postgres
+    group: postgres
+    mode: "{{ item.mode }}"
+  loop:
+    - {src: ca.crt, dest: ca.crt, mode: "0644"}
+    - {src: postgres.crt, dest: server.crt, mode: "0644"}
+    - {src: postgres.key, dest: server.key, mode: "0600"}
+  notify: Restart PostgreSQL
+
+- name: Configure PostgreSQL
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "/etc/postgresql/{{ postgres_version }}/main/postgresql.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart PostgreSQL
+
+- name: Configure PostgreSQL client authentication
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "/etc/postgresql/{{ postgres_version }}/main/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart PostgreSQL
+
+- name: Start PostgreSQL before database setup
+  ansible.builtin.meta: flush_handlers
+
+- name: Create benchmark database
+  ansible.builtin.command: createdb "{{ postgres_database }}"
+  become_user: postgres
+  register: create_database
+  changed_when: create_database.rc == 0
+  failed_when: create_database.rc != 0 and 'already exists' not in create_database.stderr
+
+- name: Install schema and roles
+  ansible.builtin.command:
+    argv: [psql, --dbname, "{{ postgres_database }}", --file, /opt/pgbouncer-experiment/postgres/schema.sql]
+  become_user: postgres
+  changed_when: true
+
+- name: Set experiment role passwords
+  ansible.builtin.command:
+    argv:
+      - psql
+      - --dbname
+      - "{{ postgres_database }}"
+      - --command
+      - >-
+        ALTER ROLE {{ item.role }} PASSWORD '{{ item.password | replace("'", "''") }}';
+  loop:
+    - {role: bench_login, password: "{{ bench_password }}"}
+    - {role: bench_backend, password: "{{ bench_backend_password }}"}
+    - {role: metrics, password: "{{ metrics_password }}"}
+  become_user: postgres
+  changed_when: true
+  no_log: true

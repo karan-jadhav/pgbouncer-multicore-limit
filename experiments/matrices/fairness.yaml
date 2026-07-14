@@ -1,0 +1,9 @@
+name: fairness-tuning
+repeats: 3
+randomize: true
+defaults: {duration: 180, warmup: 60, connections: 256, tls_mode: verify-full}
+runs:
+  - {id: fairness-1, mode: mixed, topology: shared, pgbouncer_processes: 4, sbuf_loopcnt: 1, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: fairness-5, mode: mixed, topology: shared, pgbouncer_processes: 4, sbuf_loopcnt: 5, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: fairness-10, mode: mixed, topology: shared, pgbouncer_processes: 4, sbuf_loopcnt: 10, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: fairness-0, mode: mixed, topology: shared, pgbouncer_processes: 4, sbuf_loopcnt: 0, args: {api_target_rate: 8000, export_concurrency: 4}}

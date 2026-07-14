@@ -1,0 +1,10 @@
+name: operations
+repeats: 1
+defaults: {duration: 60, warmup: 10, tls_mode: verify-full}
+runs:
+  - {id: hold-1000, mode: connections, pgbouncer_processes: 1, args: {mode: hold, connections: 1000}}
+  - {id: hold-5000, mode: connections, pgbouncer_processes: 1, args: {mode: hold, connections: 5000}}
+  - {id: hold-10000, mode: connections, pgbouncer_processes: 4, args: {mode: hold, connections: 10000}}
+  - {id: hold-20000, mode: connections, pgbouncer_processes: 4, args: {mode: hold, connections: 20000}}
+  - {id: hold-30000, mode: connections, pgbouncer_processes: 4, args: {mode: hold, connections: 30000}}
+  - {id: churn-1000, mode: connections, pgbouncer_processes: 4, args: {mode: churn, connections: 1000, target_rate: 1000}}

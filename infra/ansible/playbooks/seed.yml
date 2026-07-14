@@ -1,0 +1,23 @@
+---
+- name: Generate the deterministic benchmark dataset
+  hosts: role_postgres
+  become: true
+  tasks:
+    - name: Run deterministic data generator
+      ansible.builtin.command:
+        argv:
+          - psql
+          - --dbname
+          - "{{ postgres_database }}"
+          - --set
+          - "dataset_rows={{ dataset_rows }}"
+          - --file
+          - /opt/pgbouncer-experiment/postgres/generate.sql
+      become_user: postgres
+      changed_when: true
+
+    - name: Validate generated data
+      ansible.builtin.command:
+        argv: [psql, --dbname, "{{ postgres_database }}", --file, /opt/pgbouncer-experiment/postgres/validate.sql]
+      become_user: postgres
+      changed_when: false

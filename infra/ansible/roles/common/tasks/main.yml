@@ -1,0 +1,52 @@
+---
+- name: Disable unattended package activity during experiments
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer
+  failed_when: false
+
+- name: Install common experiment tools
+  ansible.builtin.apt:
+    name:
+      - chrony
+      - curl
+      - ethtool
+      - iperf3
+      - iproute2
+      - jq
+      - linux-tools-common
+      - linux-tools-aws
+      - postgresql-client
+      - procps
+      - python3-debian
+      - sysstat
+    state: present
+    update_cache: true
+
+- name: Configure required kernel limits
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-pgbouncer-experiment.conf
+    mode: "0644"
+    content: |
+      fs.file-max = 1000000
+      net.core.somaxconn = 65535
+      net.ipv4.ip_local_port_range = 10000 65535
+  notify: Apply sysctl
+
+- name: Configure load generator file limit
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/90-pgbouncer-experiment.conf
+    mode: "0644"
+    content: |
+      ubuntu soft nofile 200000
+      ubuntu hard nofile 200000
+
+- name: Enable chrony
+  ansible.builtin.systemd:
+    name: chrony
+    enabled: true
+    state: started

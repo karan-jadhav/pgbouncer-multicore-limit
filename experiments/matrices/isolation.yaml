@@ -1,0 +1,7 @@
+name: shared-versus-isolated
+repeats: 3
+randomize: true
+defaults: {duration: 180, warmup: 60, connections: 256, tls_mode: verify-full}
+runs:
+  - {id: shared, mode: mixed, topology: shared, pgbouncer_processes: 4, total_pool_budget: 128, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: isolated, mode: mixed, topology: isolated, pgbouncer_processes: 4, total_pool_budget: 128, args: {api_target_rate: 8000, export_concurrency: 4}}

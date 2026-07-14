@@ -1,0 +1,41 @@
+[databases]
+bench = host={{ postgres_host }} port=5432 dbname=bench user=bench_backend password={{ bench_backend_password }}
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = {{ listen_port }}
+unix_socket_dir = /run/pgbouncer/{{ peer_id }}
+so_reuseport = 1
+peer_id = {{ peer_id }}
+pidfile = /run/pgbouncer/pgbouncer-{{ peer_id }}.pid
+logfile = /var/log/pgbouncer/pgbouncer-{{ peer_id }}.log
+pool_mode = transaction
+max_client_conn = 50000
+default_pool_size = {{ pool_size }}
+reserve_pool_size = 0
+min_pool_size = 0
+max_prepared_statements = 200
+auth_type = scram-sha-256
+auth_file = /etc/pgbouncer/users.txt
+admin_users = pgbouncer_admin
+stats_users = metrics
+stats_period = 1
+log_stats = 0
+log_connections = 0
+log_disconnections = 0
+log_pooler_errors = 1
+sbuf_loopcnt = {{ sbuf_loopcnt | default(5) }}
+pkt_buf = 4096
+client_tls_sslmode = {{ client_tls_sslmode }}
+client_tls_ca_file = {{ tls_ca_file }}
+client_tls_cert_file = {{ tls_cert_file }}
+client_tls_key_file = {{ tls_key_file }}
+server_tls_sslmode = {{ server_tls_sslmode }}
+server_tls_ca_file = {{ tls_ca_file }}
+
+[peers]
+{% if pgbouncer_peering_enabled %}
+{% for peer in peers %}
+{{ peer }} = host=/run/pgbouncer/{{ peer }} port={{ 6433 if pgbouncer_topology == 'isolated' and peer == 4 else 6432 }}
+{% endfor %}
+{% endif %}

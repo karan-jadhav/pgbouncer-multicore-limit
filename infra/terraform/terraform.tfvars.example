@@ -1,0 +1,4 @@
+owner             = "replace-me"
+expires_at        = "2099-01-01T00:00:00Z"
+ssh_key_name      = "your-existing-key-pair"
+max_runtime_hours = 8

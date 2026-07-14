@@ -1,0 +1,12 @@
+name: single-process-discovery
+repeats: 1
+defaults: {duration: 60, warmup: 30, tls_mode: disable, id_range_end: 20000000}
+runs:
+  - {id: api-32, mode: api, pgbouncer_processes: 1, args: {model: closed-loop, connections: 32}}
+  - {id: api-128, mode: api, pgbouncer_processes: 1, args: {model: closed-loop, connections: 128}}
+  - {id: api-512, mode: api, pgbouncer_processes: 1, args: {model: closed-loop, connections: 512}}
+  - {id: api-2048, mode: api, pgbouncer_processes: 1, args: {model: closed-loop, connections: 2048}}
+  - {id: churn-100, mode: connections, pgbouncer_processes: 1, args: {mode: churn, target_rate: 100, connections: 128}}
+  - {id: churn-1000, mode: connections, pgbouncer_processes: 1, args: {mode: churn, target_rate: 1000, connections: 512}}
+  - {id: export-1, mode: export, pgbouncer_processes: 1, args: {concurrency: 1}}
+  - {id: export-8-slow, mode: export, pgbouncer_processes: 1, args: {concurrency: 8, consumer_rate_mbps: 5}}

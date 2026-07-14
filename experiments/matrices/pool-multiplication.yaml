@@ -1,0 +1,17 @@
+name: pool-multiplication
+repeats: 1
+defaults: {duration: 30, warmup: 10, tls_mode: verify-full, id_range_end: 20000000}
+runs:
+  - id: unsafe-four-times-128
+    mode: api
+    pgbouncer_processes: 4
+    total_pool_budget: 512
+    claim_postgres_headroom: false
+    args: {model: closed-loop, connections: 256}
+    validation: {minimum_completed: 1, maximum_failures: 256, maximum_timeouts: 256, minimum_completion_ratio: 0.0}
+  - id: correct-four-times-32
+    mode: api
+    pgbouncer_processes: 4
+    total_pool_budget: 128
+    claim_postgres_headroom: false
+    args: {model: closed-loop, connections: 256}

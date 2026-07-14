@@ -1,0 +1,15 @@
+name: direct-baseline
+repeats: 3
+randomize: true
+randomization_seed: 1001
+defaults: {duration: 180, warmup: 60, tls_mode: verify-full, seed: 1001}
+runs:
+  - {id: direct-api-16, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 16, id_range_end: 20000000}}
+  - {id: direct-api-32, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 32, id_range_end: 20000000}}
+  - {id: direct-api-64, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 64, id_range_end: 20000000}}
+  - {id: direct-api-128, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 128, id_range_end: 20000000}}
+  - {id: direct-api-256, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 256, id_range_end: 20000000}}
+  - {id: direct-api-512, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 512, id_range_end: 20000000}}
+  - {id: direct-export-1, mode: export, endpoint: postgres, args: {concurrency: 1}}
+  - {id: direct-export-4, mode: export, endpoint: postgres, args: {concurrency: 4}}
+  - {id: direct-export-16, mode: export, endpoint: postgres, args: {concurrency: 16}}

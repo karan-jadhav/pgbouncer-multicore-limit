@@ -1,0 +1,14 @@
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      private_ip_address: 127.0.0.1
+  children:
+    role_postgres:
+      hosts: {localhost: {}}
+    role_pgbouncer:
+      hosts: {localhost: {}}
+    role_loadgen_api:
+      hosts: {localhost: {}}
+    role_loadgen_export:
+      hosts: {localhost: {}}

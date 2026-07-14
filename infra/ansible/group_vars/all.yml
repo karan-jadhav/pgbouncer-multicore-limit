@@ -1,0 +1,24 @@
+ansible_user: ubuntu
+
+postgres_version: 18
+postgres_database: bench
+dataset_rows: 20000000
+
+pgbouncer_version: 1.25.2
+pgbouncer_sha256: 924ad35113fd0a71c8e2dbe85b5d03445532e2b7b37a9f8a48983beea238b332
+pgbouncer_process_count: 4
+pgbouncer_topology: shared
+total_pool_budget: 128
+pgbouncer_reserved_physical_cores: 4
+pgbouncer_client_tls_sslmode: require
+pgbouncer_server_tls_sslmode: verify-full
+pgbouncer_peering_enabled: true
+sbuf_loopcnt: 5
+
+bench_password: "{{ lookup('env', 'BENCH_PASSWORD') | default('CHANGE_ME', true) }}"
+bench_backend_password: "{{ lookup('env', 'BENCH_BACKEND_PASSWORD') | default('CHANGE_ME', true) }}"
+metrics_password: "{{ lookup('env', 'METRICS_PASSWORD') | default('CHANGE_ME', true) }}"
+pgbouncer_admin_password: "{{ lookup('env', 'PGBOUNCER_ADMIN_PASSWORD') | default('CHANGE_ME', true) }}"
+
+tls_local_dir: "{{ playbook_dir }}/../../../.local/aws-certs"
+tls_remote_dir: /etc/pgbouncer/tls

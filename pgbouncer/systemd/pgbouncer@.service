@@ -1,0 +1,21 @@
+[Unit]
+Description=PgBouncer instance %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify-reload
+User=pgbouncer
+Group=pgbouncer
+ExecStart=/opt/pgbouncer/current/bin/pgbouncer /etc/pgbouncer/pgbouncer-%i.ini
+ExecReload=/bin/kill -SIGHUP $MAINPID
+KillSignal=SIGTERM
+Restart=on-failure
+RestartSec=2
+LimitNOFILE=200000
+TasksMax=infinity
+RuntimeDirectory=pgbouncer/%i
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

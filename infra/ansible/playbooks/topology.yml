@@ -1,0 +1,6 @@
+---
+- name: Render and start a PgBouncer topology
+  hosts: role_pgbouncer
+  become: true
+  roles:
+    - pgbouncer
