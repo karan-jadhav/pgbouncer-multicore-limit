@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -26,6 +28,30 @@ def load_inventory_module():
 
 
 class AwsAccessTests(unittest.TestCase):
+    def test_inventory_loads_required_password_variables(self) -> None:
+        completed = subprocess.run(
+            [
+                "ansible-inventory",
+                "-i",
+                "infra/ansible/inventory/local.yml",
+                "--host",
+                "localhost",
+            ],
+            cwd=ROOT,
+            env={**os.environ, "ANSIBLE_CONFIG": "infra/ansible/ansible.cfg"},
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        host_vars = json.loads(completed.stdout)
+        for variable in (
+            "bench_password",
+            "bench_backend_password",
+            "metrics_password",
+            "pgbouncer_admin_password",
+        ):
+            self.assertIn(variable, host_vars)
+
     def test_workload_dsns_use_private_addresses(self) -> None:
         environment = {
             "BENCH_PASSWORD": "temporary-password",
