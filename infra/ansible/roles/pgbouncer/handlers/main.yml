@@ -8,4 +8,3 @@
     name: "pgbouncer@{{ item }}"
     state: restarted
   loop: "{{ range(1, pgbouncer_process_count + 1) | list }}"
-  failed_when: false

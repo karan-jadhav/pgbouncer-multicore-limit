@@ -21,3 +21,62 @@
         argv: [psql, --dbname, "{{ postgres_database }}", --file, /opt/pgbouncer-experiment/postgres/validate.sql]
       become_user: postgres
       changed_when: false
+
+    - name: Verify the generated row count
+      ansible.builtin.command:
+        argv:
+          - psql
+          - --dbname
+          - "{{ postgres_database }}"
+          - --tuples-only
+          - --no-align
+          - --command
+          - SELECT count(*) FROM events;
+      become_user: postgres
+      register: generated_row_count
+      changed_when: false
+      failed_when: generated_row_count.stdout | trim | int != dataset_rows | int
+
+- name: Validate both measured database endpoints
+  hosts: role_loadgen_api
+  gather_facts: false
+  run_once: true
+  vars:
+    postgres_ip: "{{ hostvars[groups['role_postgres'][0]].private_ip_address }}"
+    pgbouncer_ip: "{{ hostvars[groups['role_pgbouncer'][0]].private_ip_address }}"
+  tasks:
+    - name: Validate direct PostgreSQL connectivity and dataset
+      ansible.builtin.command:
+        argv:
+          - /opt/pgbouncer-experiment/bin/loadgen
+          - validate
+          - --dsn
+          - "postgresql://bench_login:{{ bench_password }}@{{ postgres_ip }}:5432/bench"
+          - --tls-mode
+          - verify-full
+          - --ca-cert
+          - /opt/pgbouncer-experiment/ca.crt
+          - --expected-rows
+          - "{{ dataset_rows }}"
+          - --output
+          - /tmp/validate-postgres.json
+      changed_when: false
+      no_log: true
+
+    - name: Validate PgBouncer connectivity and dataset
+      ansible.builtin.command:
+        argv:
+          - /opt/pgbouncer-experiment/bin/loadgen
+          - validate
+          - --dsn
+          - "postgresql://bench_login:{{ bench_password }}@{{ pgbouncer_ip }}:6432/bench"
+          - --tls-mode
+          - verify-full
+          - --ca-cert
+          - /opt/pgbouncer-experiment/ca.crt
+          - --expected-rows
+          - "{{ dataset_rows }}"
+          - --output
+          - /tmp/validate-pgbouncer.json
+      changed_when: false
+      no_log: true

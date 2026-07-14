@@ -4,3 +4,59 @@
   become: true
   roles:
     - pgbouncer
+
+- name: Validate the active PgBouncer topology
+  hosts: role_loadgen_api
+  gather_facts: false
+  run_once: true
+  vars:
+    pgbouncer_ip: "{{ hostvars[groups['role_pgbouncer'][0]].private_ip_address }}"
+    psql_environment:
+      PGPASSWORD: "{{ bench_password }}"
+      PGSSLMODE: "{{ 'disable' if pgbouncer_client_tls_sslmode == 'disable' else 'verify-full' }}"
+      PGSSLROOTCERT: /opt/pgbouncer-experiment/ca.crt
+  tasks:
+    - name: Verify the shared API endpoint
+      ansible.builtin.command:
+        argv:
+          - psql
+          - --host
+          - "{{ pgbouncer_ip }}"
+          - --port
+          - "6432"
+          - --username
+          - bench_login
+          - --dbname
+          - bench
+          - --command
+          - SELECT 1;
+      environment: "{{ psql_environment }}"
+      register: shared_endpoint
+      retries: 10
+      delay: 1
+      until: shared_endpoint.rc == 0
+      changed_when: false
+      no_log: true
+
+    - name: Verify the isolated export endpoint
+      ansible.builtin.command:
+        argv:
+          - psql
+          - --host
+          - "{{ pgbouncer_ip }}"
+          - --port
+          - "6433"
+          - --username
+          - bench_login
+          - --dbname
+          - bench
+          - --command
+          - SELECT 1;
+      environment: "{{ psql_environment }}"
+      register: isolated_endpoint
+      retries: 10
+      delay: 1
+      until: isolated_endpoint.rc == 0
+      changed_when: false
+      no_log: true
+      when: pgbouncer_topology == 'isolated'

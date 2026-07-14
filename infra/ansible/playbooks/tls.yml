@@ -6,6 +6,11 @@
     postgres_ip: "{{ hostvars[groups['role_postgres'][0]].private_ip_address }}"
     pgbouncer_ip: "{{ hostvars[groups['role_pgbouncer'][0]].private_ip_address }}"
   tasks:
+    - name: Remove certificates from previous AWS hosts
+      ansible.builtin.file:
+        path: "{{ tls_local_dir }}"
+        state: absent
+
     - name: Create local certificate directory
       ansible.builtin.file:
         path: "{{ tls_local_dir }}"

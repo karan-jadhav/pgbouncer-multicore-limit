@@ -37,6 +37,9 @@ def _process_cpu_percent(path: Path) -> float | None:
 def normalize_run(run_dir: Path) -> dict[str, Any]:
     manifest = json.loads((run_dir / "manifest.json").read_text())
     run_definition = manifest.get("metadata", {}).get("run_definition", {})
+    resolved_arguments = manifest.get("metadata", {}).get(
+        "resolved_arguments", run_definition.get("args", {})
+    )
     loadgen_path = run_dir / "raw" / "loadgen.json"
     loadgen = json.loads(loadgen_path.read_text()) if loadgen_path.exists() else {}
     counters = loadgen.get("counters", {})
@@ -56,7 +59,9 @@ def normalize_run(run_dir: Path) -> dict[str, Any]:
         "status": manifest["status"],
         "environment": manifest["environment"],
         "matrix": manifest["matrix"],
+        "case_id": run_definition.get("id"),
         "workload": manifest["workload"],
+        "endpoint": run_definition.get("endpoint", "pgbouncer"),
         "topology": manifest["topology"],
         "processes": int(manifest["pgbouncer_processes"]),
         "pool_size_per_process": int(manifest["pool_size_per_process"]),
@@ -65,7 +70,8 @@ def normalize_run(run_dir: Path) -> dict[str, Any]:
         "client_tls_sslmode": run_definition.get("client_tls_sslmode", "require"),
         "server_tls_sslmode": run_definition.get("server_tls_sslmode", "verify-full"),
         "peering_enabled": run_definition.get("peering_enabled", True),
-        "offered_rate": manifest.get("offered_rate"),
+        "connections": resolved_arguments.get("connections"),
+        "offered_rate": manifest.get("offered_rate") or resolved_arguments.get("api_target_rate"),
         "repeat": int(manifest["repeat_number"]),
         "duration_seconds": duration,
         "scheduled": scheduled,

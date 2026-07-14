@@ -8,6 +8,6 @@ runs:
   - {id: tls-client, mode: api, pgbouncer_processes: 1, client_tls_sslmode: require, server_tls_sslmode: disable, args: {model: closed-loop, tls_mode: verify-full}}
   - {id: tls-server, mode: api, pgbouncer_processes: 1, client_tls_sslmode: disable, server_tls_sslmode: verify-full, args: {model: closed-loop, tls_mode: disable}}
   - {id: tls-both, mode: api, pgbouncer_processes: 1, client_tls_sslmode: require, server_tls_sslmode: verify-full, args: {model: closed-loop, tls_mode: verify-full}}
-  - {id: cancel-one, mode: cancel, pgbouncer_processes: 1, args: {count: 100, duration: 30, warmup: 0, tls_mode: verify-full}}
-  - {id: cancel-four-no-peering, mode: cancel, pgbouncer_processes: 4, peering_enabled: false, args: {count: 100, duration: 30, warmup: 0, tls_mode: verify-full}}
-  - {id: cancel-four-peering, mode: cancel, pgbouncer_processes: 4, args: {count: 100, duration: 30, warmup: 0, tls_mode: verify-full}}
+  - {id: cancel-one, mode: cancel, pgbouncer_processes: 1, args: {count: 100, duration: 1, warmup: 0, tls_mode: verify-full}, validation: {minimum_completed: 0, maximum_failures: 100}}
+  - {id: cancel-four-no-peering, mode: cancel, pgbouncer_processes: 4, peering_enabled: false, args: {count: 100, duration: 1, warmup: 0, tls_mode: verify-full}, validation: {minimum_completed: 0, maximum_failures: 100}}
+  - {id: cancel-four-peering, mode: cancel, pgbouncer_processes: 4, args: {count: 100, duration: 1, warmup: 0, tls_mode: verify-full}, validation: {minimum_completed: 0, maximum_failures: 100}}

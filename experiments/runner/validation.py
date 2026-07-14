@@ -110,6 +110,19 @@ def validate_aws_collectors(
         samples = len(path.read_text().splitlines()) if path.exists() else 0
         if samples < minimum_samples:
             reasons.append(f"{name} has {samples} samples; expected at least {minimum_samples}")
+    postgres_path = raw_dir / "postgres.jsonl"
+    if postgres_path.exists():
+        try:
+            postgres_samples = [
+                json.loads(line)
+                for line in postgres_path.read_text().splitlines()
+                if line.strip()
+            ]
+        except json.JSONDecodeError:
+            reasons.append("postgres collector output contains invalid JSON")
+        else:
+            if any(sample.get("postgres", {}).get("error") for sample in postgres_samples):
+                reasons.append("postgres collector reported query failures")
     pgbouncer_path = raw_dir / "pgbouncer.log"
     if not pgbouncer_path.exists() or not pgbouncer_path.read_text().strip():
         reasons.append("per-process PgBouncer admin metrics are missing")

@@ -10,14 +10,25 @@ from pandas.errors import EmptyDataError
 
 
 def scaling_plot(frame: pd.DataFrame, output: Path) -> None:
-    api = frame[frame["workload"] == "api"]
+    api = frame[
+        (frame["workload"] == "api")
+        & (frame["endpoint"] == "pgbouncer")
+        & frame["matrix"].astype(str).str.endswith("focused-main.yaml")
+    ]
     if api.empty:
         return
-    grouped = api.groupby("processes", as_index=False)["completed_per_second"].median()
     figure, axis = plt.subplots(figsize=(7, 4.5))
-    axis.plot(grouped["processes"], grouped["completed_per_second"], marker="o")
+    for connections, group in api.groupby("connections", dropna=False):
+        grouped = group.groupby("processes", as_index=False)["completed_per_second"].median()
+        axis.plot(
+            grouped["processes"],
+            grouped["completed_per_second"],
+            marker="o",
+            label=f"{int(connections)} connections",
+        )
     axis.set(xlabel="PgBouncer processes", ylabel="Completed operations/s", title="PgBouncer scaling")
-    axis.set_xticks(sorted(grouped["processes"].unique()))
+    axis.set_xticks(sorted(api["processes"].unique()))
+    axis.legend()
     axis.grid(alpha=0.25)
     figure.tight_layout()
     figure.savefig(output / "scaling-throughput.png", dpi=180)
@@ -25,14 +36,29 @@ def scaling_plot(frame: pd.DataFrame, output: Path) -> None:
 
 
 def latency_plot(frame: pd.DataFrame, output: Path) -> None:
-    api = frame.dropna(subset=["latency_p99_us"])
+    api = frame[
+        (frame["workload"] == "api")
+        & (frame["endpoint"] == "pgbouncer")
+        & frame["matrix"].astype(str).str.endswith("focused-main.yaml")
+    ].dropna(subset=["latency_p99_us"])
     if api.empty:
         return
-    grouped = api.groupby("processes", as_index=False)["latency_p99_us"].median()
     figure, axis = plt.subplots(figsize=(7, 4.5))
-    axis.plot(grouped["processes"], grouped["latency_p99_us"] / 1000, marker="o", color="#b33b2e")
-    axis.set(xlabel="PgBouncer processes", ylabel="API p99 (ms)", title="Tail latency at fixed offered load")
-    axis.set_xticks(sorted(grouped["processes"].unique()))
+    for connections, group in api.groupby("connections", dropna=False):
+        grouped = group.groupby("processes", as_index=False)["latency_p99_us"].median()
+        axis.plot(
+            grouped["processes"],
+            grouped["latency_p99_us"] / 1000,
+            marker="o",
+            label=f"{int(connections)} connections",
+        )
+    axis.set(
+        xlabel="PgBouncer processes",
+        ylabel="API p99 (ms)",
+        title="Tail latency under closed-loop load",
+    )
+    axis.set_xticks(sorted(api["processes"].unique()))
+    axis.legend()
     axis.grid(alpha=0.25)
     figure.tight_layout()
     figure.savefig(output / "latency-p99.png", dpi=180)
@@ -40,7 +66,11 @@ def latency_plot(frame: pd.DataFrame, output: Path) -> None:
 
 
 def isolation_plot(frame: pd.DataFrame, output: Path) -> None:
-    mixed = frame[(frame["workload"] == "mixed") & frame["latency_p99_us"].notna()]
+    mixed = frame[
+        (frame["workload"] == "mixed")
+        & frame["matrix"].astype(str).str.endswith("focused-main.yaml")
+        & frame["latency_p99_us"].notna()
+    ]
     if mixed.empty or mixed["topology"].nunique() < 2:
         return
     grouped = mixed.groupby("topology", as_index=False)["latency_p99_us"].median()
@@ -54,7 +84,11 @@ def isolation_plot(frame: pd.DataFrame, output: Path) -> None:
 
 
 def tls_plot(frame: pd.DataFrame, output: Path) -> None:
-    tls = frame[(frame["workload"] == "api") & frame["tls_mode"].notna()].copy()
+    tls = frame[
+        (frame["workload"] == "api")
+        & frame["matrix"].astype(str).str.endswith("focused-secondary.yaml")
+        & frame["tls_mode"].notna()
+    ].copy()
     if tls.empty or tls["tls_mode"].nunique() < 2:
         return
     tls["configuration"] = tls["client_tls_sslmode"].astype(str) + "/" + tls["server_tls_sslmode"].astype(str)
@@ -69,7 +103,10 @@ def tls_plot(frame: pd.DataFrame, output: Path) -> None:
 
 
 def cancellation_plot(frame: pd.DataFrame, output: Path) -> None:
-    cancellation = frame[frame["workload"] == "cancel"].copy()
+    cancellation = frame[
+        (frame["workload"] == "cancel")
+        & frame["matrix"].astype(str).str.endswith("focused-secondary.yaml")
+    ].copy()
     if cancellation.empty:
         return
     attempts = cancellation["cancellations_succeeded"] + cancellation["cancellations_failed"]

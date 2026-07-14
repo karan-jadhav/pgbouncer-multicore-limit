@@ -20,9 +20,12 @@ def main() -> int:
         args.output.write_text("No accepted runs.\n")
         return 0
     columns = [
+        "case_id",
         "workload",
+        "endpoint",
         "topology",
         "processes",
+        "connections",
         "offered_rate",
         "completed_per_second",
         "latency_p99_us",

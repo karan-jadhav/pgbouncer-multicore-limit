@@ -27,6 +27,42 @@ from validation import validate_aws_collectors, validate_loadgen
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "results"
 
+COMMON_CLI_ARGUMENTS = {
+    "dsn",
+    "duration",
+    "warmup",
+    "connections",
+    "tls_mode",
+    "ca_cert",
+    "seed",
+    "application_name",
+    "start_at_unix_ms",
+}
+MODE_CLI_ARGUMENTS = {
+    "api": {
+        "model",
+        "target_rate",
+        "max_inflight",
+        "id_range_start",
+        "id_range_end",
+        "prepared",
+        "timeout_ms",
+    },
+    "export": {
+        "concurrency",
+        "tenant_range_start",
+        "tenant_range_end",
+        "consumer_rate_mbps",
+        "result_limit_bytes",
+        "timeout_seconds",
+    },
+    "connections": {"mode", "target_rate", "health_query"},
+    "cancel": {"count", "query_seconds", "cancel_after_ms"},
+    "mixed": {"api_target_rate", "export_concurrency", "consumer_rate_mbps", "export_dsn"},
+    "validate": {"expected_rows"},
+}
+ALL_CLI_ARGUMENTS = COMMON_CLI_ARGUMENTS | set().union(*MODE_CLI_ARGUMENTS.values())
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a PgBouncer experiment matrix")
@@ -235,7 +271,9 @@ def capture_environment(environment: str, processes: int, raw_dir: Path) -> dict
             pool_host, ["/opt/pgbouncer/current/bin/pgbouncer", "-V"], check=False
         ).stdout.strip()
         capture["postgres_version"] = run_ssh(
-            postgres_host, ["psql", "--version"], check=False
+            postgres_host,
+            ["sudo", "-u", "postgres", "psql", "-At", "-c", "SHOW server_version;"],
+            check=False,
         ).stdout.strip()
         capture["kernel_version"] = run_ssh(
             pool_host, ["uname", "-r"], check=False
@@ -400,7 +438,18 @@ def stop_aws_collectors(collectors: list[dict[str, Any]]) -> bool:
 
 def cli_args(run: dict[str, Any], defaults: dict[str, Any], output: Path, run_id: str, environment: str) -> list[str]:
     mode = str(run["mode"])
-    merged = {**defaults, **run.get("args", {})}
+    if mode not in MODE_CLI_ARGUMENTS:
+        raise ValueError(f"unsupported load-generator mode: {mode}")
+    unknown_defaults = sorted(set(defaults) - ALL_CLI_ARGUMENTS)
+    if unknown_defaults:
+        raise ValueError(f"unsupported matrix defaults: {', '.join(unknown_defaults)}")
+    allowed = COMMON_CLI_ARGUMENTS | MODE_CLI_ARGUMENTS[mode]
+    run_arguments = run.get("args", {})
+    unknown = sorted(set(run_arguments) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported {mode} arguments: {', '.join(unknown)}")
+    merged = {key: value for key, value in defaults.items() if key in allowed}
+    merged.update(run_arguments)
     endpoint = str(run.get("endpoint", "pgbouncer"))
     dsn = merged.pop("dsn", None)
     if dsn is None:
@@ -532,6 +581,7 @@ def run_one(
     topology = str(run.get("topology", "shared"))
     mode = str(run["mode"])
     defaults = matrix.get("defaults", {})
+    resolved_arguments = {**defaults, **run.get("args", {})}
     started_at = datetime.now(UTC).isoformat()
     manifest = RunManifest(
         run_id=run_id,
@@ -554,7 +604,11 @@ def run_one(
         measure_seconds=int(run.get("args", {}).get("duration", defaults.get("duration", 10))),
         repeat_number=repeat,
         random_seed=int(run.get("args", {}).get("seed", defaults.get("seed", 1))),
-        metadata={"state": RunState.CREATED, "run_definition": run},
+        metadata={
+            "state": RunState.CREATED,
+            "run_definition": run,
+            "resolved_arguments": resolved_arguments,
+        },
     )
     manifest.write(running_dir / "manifest.json")
 

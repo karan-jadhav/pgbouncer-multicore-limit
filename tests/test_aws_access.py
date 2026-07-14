@@ -3,12 +3,15 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "experiments" / "runner"))
@@ -28,6 +31,42 @@ def load_inventory_module():
 
 
 class AwsAccessTests(unittest.TestCase):
+    def test_postgres_connection_limit_covers_focused_direct_runs(self) -> None:
+        template = (
+            ROOT
+            / "infra/ansible/roles/postgres/templates/postgresql.conf.j2"
+        ).read_text()
+        configured = re.search(r"^max_connections = (\d+)$", template, re.MULTILINE)
+        self.assertIsNotNone(configured)
+        matrix = yaml.safe_load(
+            (ROOT / "experiments/matrices/focused-baseline.yaml").read_text()
+        )
+        requested = max(
+            int(run.get("args", {}).get("connections", 0))
+            for run in matrix["runs"]
+            if run.get("endpoint") == "postgres"
+        )
+        self.assertGreater(int(configured.group(1)), requested)
+
+    def test_aws_service_paths_support_runtime_and_tls_variants(self) -> None:
+        hba = (
+            ROOT / "infra/ansible/roles/postgres/templates/pg_hba.conf.j2"
+        ).read_text()
+        self.assertIn("hostssl all             metrics         127.0.0.1/32", hba)
+        self.assertIn(
+            "host    all             all             {{ hostvars[groups['role_pgbouncer'][0]].private_ip_address }}/32",
+            hba,
+        )
+        pgbouncer = (ROOT / "pgbouncer/config/base.ini.j2").read_text()
+        self.assertIn(
+            "pidfile = /run/pgbouncer/{{ peer_id }}/pgbouncer.pid", pgbouncer
+        )
+        tls = (ROOT / "infra/ansible/playbooks/tls.yml").read_text()
+        self.assertLess(
+            tls.index("Remove certificates from previous AWS hosts"),
+            tls.index("Create local certificate directory"),
+        )
+
     def test_postgres_config_preserves_packaged_cluster_paths(self) -> None:
         template = (
             ROOT

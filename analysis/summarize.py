@@ -23,7 +23,18 @@ METRICS = [
 def summarize(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
-    groups = ["workload", "topology", "processes", "offered_rate", "tls_mode"]
+    groups = [
+        "workload",
+        "endpoint",
+        "topology",
+        "processes",
+        "connections",
+        "offered_rate",
+        "tls_mode",
+        "client_tls_sslmode",
+        "server_tls_sslmode",
+        "peering_enabled",
+    ]
     available_metrics = [metric for metric in METRICS if metric in frame]
     summary = frame.groupby(groups, dropna=False)[available_metrics].agg(["median", "min", "max", "mean", "std"])
     summary.columns = ["_".join(column) for column in summary.columns]

@@ -15,7 +15,9 @@ sys.path.insert(0, str(ROOT / "experiments" / "runner"))
 sys.path.insert(0, str(ROOT / "analysis"))
 
 from normalize import normalize_run  # noqa: E402
+from runner import cli_args  # noqa: E402
 from telegram import TelegramNotifier  # noqa: E402
+from validation import validate_aws_collectors  # noqa: E402
 
 
 def load_aws_run_module():
@@ -29,6 +31,59 @@ def load_aws_run_module():
 
 
 class AwsRunTests(unittest.TestCase):
+    def test_mode_specific_defaults_are_not_forwarded_to_other_commands(self) -> None:
+        defaults = {
+            "duration": 60,
+            "warmup": 20,
+            "tls_mode": "verify-full",
+            "id_range_end": 20_000_000,
+        }
+        for mode in ("cancel", "export", "mixed"):
+            command = cli_args(
+                {"mode": mode, "args": {}},
+                defaults,
+                Path("output.json"),
+                "test-run",
+                "local",
+            )
+            self.assertNotIn("--id-range-end", command)
+        api_command = cli_args(
+            {"mode": "api", "args": {}},
+            defaults,
+            Path("output.json"),
+            "test-run",
+            "local",
+        )
+        self.assertIn("--id-range-end", api_command)
+
+    def test_cancellation_outcomes_are_measurements_not_pipeline_failures(self) -> None:
+        matrix = yaml.safe_load(
+            (ROOT / "experiments/matrices/focused-secondary.yaml").read_text()
+        )
+        cancellation_runs = [run for run in matrix["runs"] if run["mode"] == "cancel"]
+        self.assertEqual(len(cancellation_runs), 3)
+        for run in cancellation_runs:
+            self.assertEqual(run["args"]["duration"], 1)
+            self.assertEqual(run["validation"]["minimum_completed"], 0)
+            self.assertEqual(
+                run["validation"]["maximum_failures"], run["args"]["count"]
+            )
+
+    def test_postgres_collector_query_errors_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            raw = Path(temporary)
+            (raw / "postgres.jsonl").write_text(
+                json.dumps(
+                    {
+                        "timestamp_unix": 1,
+                        "postgres": {"error": "postgres query failed"},
+                    }
+                )
+                + "\n"
+            )
+            result = validate_aws_collectors(raw, 1, False)
+            self.assertIn("postgres collector reported query failures", result.reasons)
+
     def test_telegram_notification_reads_loaded_environment(self) -> None:
         notifier = TelegramNotifier.from_env(
             {"TELEGRAM_BOT_TOKEN": "test-token", "TELEGRAM_CHAT_ID": "12345"}
@@ -101,7 +156,10 @@ class AwsRunTests(unittest.TestCase):
                 "tls_mode": "verify-full",
                 "repeat_number": 1,
                 "measure_seconds": 10,
-                "metadata": {"run_definition": {}},
+                "metadata": {
+                    "run_definition": {"id": "api-c256-p1"},
+                    "resolved_arguments": {"connections": 256},
+                },
             }
             (run_dir / "manifest.json").write_text(json.dumps(manifest))
             (raw / "loadgen.json").write_text(
@@ -120,7 +178,10 @@ class AwsRunTests(unittest.TestCase):
             (raw / "process-pgbouncer.jsonl").write_text(
                 "\n".join(json.dumps(sample) for sample in samples) + "\n"
             )
-            self.assertIsNotNone(normalize_run(run_dir)["pgbouncer_cpu_percent"])
+            normalized = normalize_run(run_dir)
+            self.assertIsNotNone(normalized["pgbouncer_cpu_percent"])
+            self.assertEqual(normalized["case_id"], "api-c256-p1")
+            self.assertEqual(normalized["connections"], 256)
 
 
 if __name__ == "__main__":
