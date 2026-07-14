@@ -10,13 +10,15 @@ while (( running )); do
     timestamp=$(date +%s)
     for instance in $(seq 1 "$processes"); do
         port=6432
-        if ! psql -h "/run/pgbouncer/$instance" -p "$port" -U pgbouncer_admin -d pgbouncer -At -c 'SHOW STATS;' >/tmp/pgbouncer-stats 2>/dev/null; then
+        if ! stats=$(psql -h "/run/pgbouncer/$instance" -p "$port" -U pgbouncer_admin -d pgbouncer -At -c 'SHOW STATS;' 2>/dev/null); then
             port=6433
-            psql -h "/run/pgbouncer/$instance" -p "$port" -U pgbouncer_admin -d pgbouncer -At -c 'SHOW STATS;' >/tmp/pgbouncer-stats 2>/dev/null || true
+            stats=$(psql -h "/run/pgbouncer/$instance" -p "$port" -U pgbouncer_admin -d pgbouncer -At -c 'SHOW STATS;' 2>/dev/null || true)
         fi
-        while IFS= read -r line; do
-            printf '%s|%s|%s|stats|%s\n' "$timestamp" "$instance" "$port" "$line" >>"$output"
-        done </tmp/pgbouncer-stats
+        if [[ -n "$stats" ]]; then
+            while IFS= read -r line; do
+                printf '%s|%s|%s|stats|%s\n' "$timestamp" "$instance" "$port" "$line" >>"$output"
+            done <<<"$stats"
+        fi
         for command in 'SHOW POOLS;' 'SHOW LISTS;' 'SHOW MEM;'; do
             psql -h "/run/pgbouncer/$instance" -p "$port" -U pgbouncer_admin -d pgbouncer -At -c "$command" 2>/dev/null |
                 while IFS= read -r line; do

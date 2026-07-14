@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "experiments" / "runner"))
 sys.path.insert(0, str(ROOT / "analysis"))
 
 from normalize import normalize_run  # noqa: E402
-from runner import cli_args  # noqa: E402
+from runner import cli_args, start_aws_collectors  # noqa: E402
 from telegram import TelegramNotifier  # noqa: E402
 from validation import validate_aws_collectors  # noqa: E402
 
@@ -31,6 +31,44 @@ def load_aws_run_module():
 
 
 class AwsRunTests(unittest.TestCase):
+    def test_aws_pgbouncer_collectors_run_as_service_user(self) -> None:
+        environment = {
+            "AWS_API_LOADGEN_HOST": "api.example",
+            "AWS_EXPORT_LOADGEN_HOST": "export.example",
+            "AWS_PGBOUNCER_HOST": "pgbouncer.example",
+            "AWS_POSTGRES_HOST": "postgres.example",
+            "PGBOUNCER_ADMIN_PASSWORD": "admin-password",
+            "METRICS_PASSWORD": "metrics-password",
+        }
+        completed = MagicMock(returncode=0, stdout="123\n", stderr="")
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.dict("os.environ", environment, clear=True),
+                patch("runner.run_ssh", return_value=completed) as run_ssh,
+                patch("runner.time.sleep"),
+            ):
+                collectors = start_aws_collectors(Path(temporary), "test-run", 4)
+
+        commands = [call.args[1] for call in run_ssh.call_args_list]
+        service_user_commands = [
+            command
+            for command in commands
+            if command[:3] == ["sudo", "-u", "pgbouncer"]
+        ]
+        self.assertEqual(len(service_user_commands), 2)
+        self.assertTrue(
+            any(
+                "/opt/pgbouncer/current/bin/pgbouncer" in " ".join(command)
+                for command in service_user_commands
+            )
+        )
+        self.assertEqual(
+            len([collector for collector in collectors if collector["run_as"] == "pgbouncer"]),
+            2,
+        )
+        self.assertTrue(any(command[0] == "awk" for command in commands))
+        self.assertTrue(any(command[0] == "jq" for command in commands))
+
     def test_mode_specific_defaults_are_not_forwarded_to_other_commands(self) -> None:
         defaults = {
             "duration": 60,

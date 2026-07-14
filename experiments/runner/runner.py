@@ -356,19 +356,29 @@ def start_aws_collectors(raw_dir: Path, run_id: str, processes: int) -> list[dic
     }
     collectors: list[dict[str, Any]] = []
 
-    def start(role: str, name: str, command: list[str], extension: str) -> None:
+    def start(
+        role: str,
+        name: str,
+        command: list[str],
+        extension: str,
+        user: str | None = None,
+    ) -> None:
         host = hosts[role]
         remote_path = f"/tmp/{run_id}-{name}.{extension}"
         expanded = [remote_path if value == "{output}" else value for value in command]
         shell = "nohup " + " ".join(shlex.quote(value) for value in expanded)
         shell += f" >/tmp/{run_id}-{name}.log 2>&1 & echo $!"
-        result = run_ssh(host, ["sh", "-c", shell])
+        launch = ["sh", "-c", shell]
+        if user is not None:
+            launch = ["sudo", "-u", user, *launch]
+        result = run_ssh(host, launch)
         collectors.append(
             {
                 "host": host,
                 "pid": int(result.stdout.strip()),
                 "remote": remote_path,
                 "local": raw_dir / f"{name}.{extension}",
+                "run_as": user,
             }
         )
 
@@ -379,8 +389,16 @@ def start_aws_collectors(raw_dir: Path, run_id: str, processes: int) -> list[dic
     start(
         "pgbouncer",
         "process-pgbouncer",
-        ["python3", "/opt/pgbouncer-experiment/collectors/process.py", "--output", "{output}", "--match", "pgbouncer"],
+        [
+            "python3",
+            "/opt/pgbouncer-experiment/collectors/process.py",
+            "--output",
+            "{output}",
+            "--match",
+            "/opt/pgbouncer/current/bin/pgbouncer",
+        ],
         "jsonl",
+        user="pgbouncer",
     )
     start(
         "api",
@@ -405,6 +423,7 @@ def start_aws_collectors(raw_dir: Path, run_id: str, processes: int) -> list[dic
             str(processes),
         ],
         "log",
+        user="pgbouncer",
     )
     start(
         "postgres",
@@ -417,14 +436,47 @@ def start_aws_collectors(raw_dir: Path, run_id: str, processes: int) -> list[dic
         ],
         "jsonl",
     )
+    time.sleep(2)
+    admin_metrics = run_ssh(
+        hosts["pgbouncer"],
+        [
+            "awk",
+            "-F[|]",
+            "-v",
+            f"expected={processes}",
+            "{seen[$2]=1} END {for (id in seen) count++; exit count == expected ? 0 : 1}",
+            f"/tmp/{run_id}-pgbouncer.log",
+        ],
+        check=False,
+    )
+    process_metrics = run_ssh(
+        hosts["pgbouncer"],
+        [
+            "jq",
+            "--exit-status",
+            "--slurp",
+            "--argjson",
+            "expected",
+            str(processes),
+            "any(.[]; (.processes | length) == $expected)",
+            f"/tmp/{run_id}-process-pgbouncer.jsonl",
+        ],
+        check=False,
+    )
+    if admin_metrics.returncode != 0 or process_metrics.returncode != 0:
+        stop_aws_collectors(collectors)
+        raise RuntimeError("PgBouncer metrics collector preflight failed")
     return collectors
 
 
 def stop_aws_collectors(collectors: list[dict[str, Any]]) -> bool:
     healthy = True
     for collector in collectors:
+        command = ["kill", "-TERM", str(collector["pid"])]
+        if collector.get("run_as") is not None:
+            command.insert(0, "sudo")
         result = run_ssh(
-            collector["host"], ["kill", "-TERM", str(collector["pid"])], check=False
+            collector["host"], command, check=False
         )
         healthy = healthy and result.returncode == 0
     time.sleep(1.2)
