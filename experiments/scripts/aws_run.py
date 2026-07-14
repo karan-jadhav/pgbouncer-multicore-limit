@@ -301,6 +301,9 @@ def main() -> int:
 
     try:
         prepare_results()
+        environment["AWS_EXPERIMENT_SESSION_ID"] = datetime.now(UTC).strftime(
+            "%Y%m%dT%H%M%S%fZ"
+        )
         refresh_expiry()
         for name, command, output in stages:
             notifier.send(f"Step started: {name}")
@@ -357,6 +360,9 @@ def main() -> int:
                     str(matrix),
                     "--environment",
                     "aws",
+                    "--resume-accepted",
+                    "--operational-attempts",
+                    "2",
                 ],
                 environment,
             )

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import yaml
@@ -17,7 +18,13 @@ sys.path.insert(0, str(ROOT / "analysis"))
 
 from normalize import normalize_run  # noqa: E402
 from remote import COPY_ATTEMPTS, copy_from  # noqa: E402
-from runner import cli_args, start_aws_collectors  # noqa: E402
+from runner import (  # noqa: E402
+    RunOutcome,
+    accepted_case_keys,
+    cli_args,
+    run_matrix,
+    start_aws_collectors,
+)
 from telegram import TelegramNotifier  # noqa: E402
 from validation import validate_aws_collectors  # noqa: E402
 
@@ -33,6 +40,80 @@ def load_aws_run_module():
 
 
 class AwsRunTests(unittest.TestCase):
+    def test_matrix_retries_only_the_operationally_failed_case(self) -> None:
+        matrix = {
+            "name": "test-matrix",
+            "runs": [{"id": "first"}, {"id": "second"}],
+        }
+        args = SimpleNamespace(
+            operational_attempts=2,
+            resume_accepted=False,
+            results=Path("results"),
+            matrix=Path("matrix.yaml"),
+        )
+        outcomes = [
+            RunOutcome("first-attempt-1", False, True),
+            RunOutcome("first-attempt-2", True, False),
+            RunOutcome("second-attempt-1", True, False),
+        ]
+        with (
+            patch("runner.run_one", side_effect=outcomes) as run_one,
+            patch("runner.time.sleep"),
+        ):
+            self.assertTrue(run_matrix(matrix, args, None))
+
+        self.assertEqual(
+            [call.args[1]["id"] for call in run_one.call_args_list],
+            ["first", "first", "second"],
+        )
+
+    def test_matrix_stops_after_operational_retries_are_exhausted(self) -> None:
+        matrix = {
+            "name": "test-matrix",
+            "runs": [{"id": "first"}, {"id": "second"}],
+        }
+        args = SimpleNamespace(
+            operational_attempts=2,
+            resume_accepted=False,
+            results=Path("results"),
+            matrix=Path("matrix.yaml"),
+        )
+        failure = RunOutcome("failed", False, True)
+        with (
+            patch("runner.run_one", return_value=failure) as run_one,
+            patch("runner.time.sleep"),
+        ):
+            self.assertFalse(run_matrix(matrix, args, None))
+
+        self.assertEqual(run_one.call_count, 2)
+        self.assertTrue(all(call.args[1]["id"] == "first" for call in run_one.call_args_list))
+
+    def test_accepted_manifests_are_run_checkpoints(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            results = Path(temporary)
+            manifest_dir = results / "accepted" / "completed-run"
+            manifest_dir.mkdir(parents=True)
+            matrix = ROOT / "experiments" / "matrices" / "focused-main.yaml"
+            (manifest_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "accepted",
+                        "matrix": str(matrix),
+                        "repeat_number": 2,
+                        "metadata": {
+                            "run_definition": {"id": "api-c256-p4"},
+                            "experiment_session_id": "session-1",
+                        },
+                    }
+                )
+            )
+
+            self.assertEqual(
+                accepted_case_keys(results, matrix, "session-1"),
+                {("api-c256-p4", 2)},
+            )
+            self.assertEqual(accepted_case_keys(results, matrix, "session-2"), set())
+
     def test_collector_copy_retries_transient_ssh_failure(self) -> None:
         failure = subprocess.CalledProcessError(255, ["scp"])
         completed = subprocess.CompletedProcess(["scp"], 0)

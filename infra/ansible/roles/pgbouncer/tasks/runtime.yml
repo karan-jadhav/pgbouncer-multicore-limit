@@ -1,0 +1,37 @@
+---
+- name: Render PgBouncer instance configurations
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../../pgbouncer/config/base.ini.j2"
+    dest: "/etc/pgbouncer/pgbouncer-{{ item }}.ini"
+    owner: pgbouncer
+    group: pgbouncer
+    mode: "0640"
+  vars:
+    peer_id: "{{ item }}"
+    listen_port: "{{ 6433 if pgbouncer_topology == 'isolated' and item == 4 else 6432 }}"
+    pool_size: "{{ total_pool_budget // pgbouncer_process_count }}"
+    postgres_host: "{{ hostvars[groups['role_postgres'][0]].private_ip_address }}"
+    client_tls_sslmode: "{{ pgbouncer_client_tls_sslmode }}"
+    server_tls_sslmode: "{{ pgbouncer_server_tls_sslmode }}"
+    tls_ca_file: /etc/pgbouncer/tls/ca.crt
+    tls_cert_file: /etc/pgbouncer/tls/server.crt
+    tls_key_file: /etc/pgbouncer/tls/server.key
+    peers: "{{ range(1, pgbouncer_process_count + 1) | list }}"
+  loop: "{{ range(1, pgbouncer_process_count + 1) | list }}"
+  notify: Restart PgBouncer
+
+- name: Enable active PgBouncer instances
+  ansible.builtin.systemd:
+    name: "pgbouncer@{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ range(1, pgbouncer_process_count + 1) | list }}"
+
+- name: Stop inactive PgBouncer instances
+  ansible.builtin.systemd:
+    name: "pgbouncer@{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ range(pgbouncer_process_count + 1, 9) | list }}"
+  failed_when: false

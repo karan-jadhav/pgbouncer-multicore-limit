@@ -56,6 +56,30 @@ class AwsAccessTests(unittest.TestCase):
         )
         self.assertIn("systemd: yes", verification["failed_when"])
 
+    def test_runtime_topology_does_not_repeat_pgbouncer_installation(self) -> None:
+        playbook = yaml.safe_load(
+            (ROOT / "infra/ansible/playbooks/topology.yml").read_text()
+        )
+        topology_play = playbook[0]
+        self.assertFalse(topology_play["gather_facts"])
+        include = topology_play["tasks"][0]["ansible.builtin.include_role"]
+        self.assertEqual(include["tasks_from"], "runtime")
+
+        runtime = yaml.safe_load(
+            (
+                ROOT
+                / "infra/ansible/roles/pgbouncer/tasks/runtime.yml"
+            ).read_text()
+        )
+        self.assertEqual(
+            [task["name"] for task in runtime],
+            [
+                "Render PgBouncer instance configurations",
+                "Enable active PgBouncer instances",
+                "Stop inactive PgBouncer instances",
+            ],
+        )
+
     def test_postgres_connection_limit_covers_focused_direct_runs(self) -> None:
         template = (
             ROOT

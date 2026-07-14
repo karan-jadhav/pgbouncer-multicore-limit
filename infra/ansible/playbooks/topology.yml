@@ -2,8 +2,12 @@
 - name: Render and start a PgBouncer topology
   hosts: role_pgbouncer
   become: true
-  roles:
-    - pgbouncer
+  gather_facts: false
+  tasks:
+    - name: Apply runtime PgBouncer configuration
+      ansible.builtin.include_role:
+        name: pgbouncer
+        tasks_from: runtime
 
 - name: Validate the active PgBouncer topology
   hosts: role_loadgen_api

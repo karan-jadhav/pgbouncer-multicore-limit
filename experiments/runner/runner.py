@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,13 @@ MODE_CLI_ARGUMENTS = {
 ALL_CLI_ARGUMENTS = COMMON_CLI_ARGUMENTS | set().union(*MODE_CLI_ARGUMENTS.values())
 
 
+@dataclass(frozen=True)
+class RunOutcome:
+    run_id: str
+    accepted: bool
+    operational_failure: bool
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a PgBouncer experiment matrix")
     parser.add_argument("--matrix", type=Path, required=True)
@@ -75,6 +83,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--results", type=Path, default=RESULTS)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resume-accepted", action="store_true")
+    parser.add_argument("--operational-attempts", type=int, default=1)
     return parser.parse_args()
 
 
@@ -621,7 +631,7 @@ def run_one(
     repeat: int,
     args: argparse.Namespace,
     notifier: TelegramNotifier | None = None,
-) -> tuple[str, bool]:
+) -> RunOutcome:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     run_id = f"{timestamp}-{run['id']}-r{repeat}"
     running_dir = args.results / ".running" / run_id
@@ -660,6 +670,7 @@ def run_one(
             "state": RunState.CREATED,
             "run_definition": run,
             "resolved_arguments": resolved_arguments,
+            "experiment_session_id": os.environ.get("AWS_EXPERIMENT_SESSION_ID"),
         },
     )
     manifest.write(running_dir / "manifest.json")
@@ -673,11 +684,12 @@ def run_one(
     if args.dry_run:
         print(" ".join([str(args.loadgen), *cli_args(run, defaults, raw_dir / "loadgen.json", run_id, args.environment)]))
         shutil.rmtree(running_dir)
-        return run_id, True
+        return RunOutcome(run_id, True, False)
 
     collectors: list[subprocess.Popen[Any]] = []
     aws_collectors: list[dict[str, Any]] = []
     accepted = False
+    operational_failure = False
     reasons: list[str] = []
     try:
         manifest.status = RunState.PREFLIGHT
@@ -711,6 +723,7 @@ def run_one(
             )
         if returncode != 0:
             reasons.append(f"load generator exited with status {returncode}")
+            operational_failure = True
         manifest.status = RunState.COLLECTING
         if args.environment == "local":
             manifest.collector_status = "ok" if stop_collectors(collectors) else "failed"
@@ -728,6 +741,7 @@ def run_one(
             reasons.append("load generator JSON output is missing")
         if manifest.collector_status != "ok":
             reasons.append("one or more collectors failed")
+            operational_failure = True
         if args.environment == "aws":
             quality = validate_aws_collectors(
                 raw_dir,
@@ -735,11 +749,13 @@ def run_one(
                 bool(run.get("claim_postgres_headroom", run.get("endpoint", "pgbouncer") != "postgres")),
             )
             reasons.extend(quality.reasons)
+            operational_failure = operational_failure or bool(quality.reasons)
             if dirty and not matrix.get("allow_dirty", False):
                 reasons.append("repository is dirty and the matrix does not allow dirty AWS runs")
         accepted = not reasons
     except Exception as error:  # preserve artifacts for diagnosis
         reasons.append(str(error))
+        operational_failure = True
     finally:
         if collectors:
             stop_collectors(collectors)
@@ -775,7 +791,82 @@ def run_one(
         if reasons:
             message += f"\nReason: {manifest.rejection_reason[:3000]}"
         notifier.send(message)
-    return run_id, accepted
+    return RunOutcome(run_id, accepted, operational_failure)
+
+
+def normalized_matrix_path(path: Path) -> Path:
+    return (path if path.is_absolute() else ROOT / path).resolve()
+
+
+def accepted_case_keys(
+    results: Path, matrix_path: Path, experiment_session_id: str
+) -> set[tuple[str, int]]:
+    accepted: set[tuple[str, int]] = set()
+    expected_matrix = normalized_matrix_path(matrix_path)
+    for manifest_path in (results / "accepted").glob("*/manifest.json"):
+        try:
+            manifest = json.loads(manifest_path.read_text())
+            recorded_matrix = normalized_matrix_path(Path(manifest["matrix"]))
+            run_id = str(manifest["metadata"]["run_definition"]["id"])
+            repeat = int(manifest["repeat_number"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if (
+            manifest.get("status") == RunState.ACCEPTED
+            and recorded_matrix == expected_matrix
+            and manifest["metadata"].get("experiment_session_id") == experiment_session_id
+        ):
+            accepted.add((run_id, repeat))
+    return accepted
+
+
+def run_matrix(
+    matrix: dict[str, Any],
+    args: argparse.Namespace,
+    notifier: TelegramNotifier | None,
+) -> bool:
+    attempts = int(args.operational_attempts)
+    if attempts < 1:
+        raise ValueError("operational attempts must be at least one")
+    session_id = os.environ.get("AWS_EXPERIMENT_SESSION_ID", "")
+    completed = (
+        accepted_case_keys(args.results, args.matrix, session_id)
+        if args.resume_accepted and session_id
+        else set()
+    )
+    repeats = int(matrix.get("repeats", 1))
+    seed = int(matrix.get("randomization_seed", 1))
+    cooldown = float(matrix.get("cooldown_seconds", 0))
+    for repeat in range(1, repeats + 1):
+        runs = list(matrix["runs"])
+        if matrix.get("randomize", False):
+            random.Random(seed + repeat).shuffle(runs)
+        for run in runs:
+            case = (str(run["id"]), repeat)
+            if case in completed:
+                print(f"checkpoint accepted: {run['id']} repeat {repeat}")
+                if notifier is not None:
+                    notifier.send(
+                        f"Run skipped from checkpoint\nMatrix: {matrix['name']}\n"
+                        f"Run: {run['id']}\nRepeat: {repeat}"
+                    )
+                continue
+            for attempt in range(1, attempts + 1):
+                outcome = run_one(matrix, run, repeat, args, notifier)
+                if outcome.accepted:
+                    completed.add(case)
+                    break
+                if not outcome.operational_failure or attempt == attempts:
+                    return False
+                if notifier is not None:
+                    notifier.send(
+                        f"Retrying operationally failed run\nMatrix: {matrix['name']}\n"
+                        f"Run: {run['id']}\nRepeat: {repeat}\n"
+                        f"Attempt: {attempt + 1}/{attempts}"
+                    )
+                time.sleep(cooldown)
+            time.sleep(cooldown)
+    return True
 
 
 def main() -> int:
@@ -785,17 +876,7 @@ def main() -> int:
     matrix = yaml.safe_load(args.matrix.read_text())
     if not args.dry_run and args.environment == "local" and not args.loadgen.is_file():
         raise SystemExit(f"load generator not found: {args.loadgen}; run make build-loadgen")
-    repeats = int(matrix.get("repeats", 1))
-    seed = int(matrix.get("randomization_seed", 1))
-    outcomes = []
-    for repeat in range(1, repeats + 1):
-        runs = list(matrix["runs"])
-        if matrix.get("randomize", False):
-            random.Random(seed + repeat).shuffle(runs)
-        for run in runs:
-            outcomes.append(run_one(matrix, run, repeat, args, notifier))
-            time.sleep(float(matrix.get("cooldown_seconds", 0)))
-    return 0 if all(accepted for _, accepted in outcomes) else 1
+    return 0 if run_matrix(matrix, args, notifier) else 1
 
 
 if __name__ == "__main__":
