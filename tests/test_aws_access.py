@@ -44,10 +44,17 @@ class AwsAccessTests(unittest.TestCase):
         configure = next(
             task for task in tasks if task["name"] == "Configure PgBouncer source"
         )
+        self.assertIn("--with-systemd", configure["ansible.builtin.command"]["cmd"])
         self.assertEqual(
             configure["ansible.builtin.command"]["creates"],
             "/tmp/pgbouncer-{{ pgbouncer_version }}/config.mak",
         )
+        verification = next(
+            task
+            for task in tasks
+            if task["name"] == "Verify PgBouncer was built with systemd support"
+        )
+        self.assertIn("systemd: yes", verification["failed_when"])
 
     def test_postgres_connection_limit_covers_focused_direct_runs(self) -> None:
         template = (

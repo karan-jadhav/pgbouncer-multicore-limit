@@ -34,7 +34,7 @@
 
 - name: Configure PgBouncer source
   ansible.builtin.command:
-    cmd: "./configure --prefix=/opt/pgbouncer/{{ pgbouncer_version }}"
+    cmd: "./configure --prefix=/opt/pgbouncer/{{ pgbouncer_version }} --with-systemd"
     chdir: "/tmp/pgbouncer-{{ pgbouncer_version }}"
     creates: "/tmp/pgbouncer-{{ pgbouncer_version }}/config.mak"
 
@@ -49,6 +49,15 @@
     cmd: make install
     chdir: "/tmp/pgbouncer-{{ pgbouncer_version }}"
     creates: "/opt/pgbouncer/{{ pgbouncer_version }}/bin/pgbouncer"
+
+- name: Verify PgBouncer was built with systemd support
+  ansible.builtin.command:
+    argv: ["/opt/pgbouncer/{{ pgbouncer_version }}/bin/pgbouncer", --version]
+  register: pgbouncer_build_version
+  changed_when: false
+  failed_when: >-
+    pgbouncer_build_version.rc != 0 or
+    'systemd: yes' not in pgbouncer_build_version.stdout
 
 - name: Point current symlink to pinned PgBouncer
   ansible.builtin.file:
