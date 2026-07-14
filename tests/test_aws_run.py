@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ sys.path.insert(0, str(ROOT / "experiments" / "runner"))
 sys.path.insert(0, str(ROOT / "analysis"))
 
 from normalize import normalize_run  # noqa: E402
+from remote import COPY_ATTEMPTS, copy_from  # noqa: E402
 from runner import cli_args, start_aws_collectors  # noqa: E402
 from telegram import TelegramNotifier  # noqa: E402
 from validation import validate_aws_collectors  # noqa: E402
@@ -31,6 +33,55 @@ def load_aws_run_module():
 
 
 class AwsRunTests(unittest.TestCase):
+    def test_collector_copy_retries_transient_ssh_failure(self) -> None:
+        failure = subprocess.CalledProcessError(255, ["scp"])
+        completed = subprocess.CompletedProcess(["scp"], 0)
+        with (
+            patch("remote.private_key", return_value="/tmp/test-key"),
+            patch("remote.subprocess.run", side_effect=[failure, completed]) as run,
+            patch("remote.time.sleep") as sleep,
+        ):
+            copy_from("api.example", "/tmp/host-api.csv", Path("host-api.csv"))
+
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_collector_copy_stops_after_bounded_retries(self) -> None:
+        failure = subprocess.CalledProcessError(255, ["scp"])
+        with (
+            patch("remote.private_key", return_value="/tmp/test-key"),
+            patch("remote.subprocess.run", side_effect=failure) as run,
+            patch("remote.time.sleep") as sleep,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            copy_from("api.example", "/tmp/host-api.csv", Path("host-api.csv"))
+
+        self.assertEqual(run.call_count, COPY_ATTEMPTS)
+        self.assertEqual(sleep.call_count, COPY_ATTEMPTS - 1)
+
+    def test_cleanup_ignores_broken_notification_pipe(self) -> None:
+        aws_run = load_aws_run_module()
+        notifier = MagicMock()
+        notifier.send.side_effect = BrokenPipeError
+        with patch.object(aws_run, "destroy_infrastructure") as destroy:
+            cleanup = aws_run.cleanup_infrastructure({}, notifier)
+
+        self.assertEqual(cleanup, "completed")
+        destroy.assert_called_once_with({})
+
+    def test_destroy_redirects_output_to_cleanup_log(self) -> None:
+        aws_run = load_aws_run_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            cleanup_log = Path(temporary) / "cleanup.log"
+            with (
+                patch.object(aws_run, "CLEANUP_LOG", cleanup_log),
+                patch.object(aws_run.subprocess, "run") as run,
+            ):
+                aws_run.destroy_infrastructure({"AWS_PROFILE": "test"})
+
+        self.assertIsNotNone(run.call_args.kwargs["stdout"])
+        self.assertEqual(run.call_args.kwargs["stderr"], subprocess.STDOUT)
+
     def test_aws_pgbouncer_collectors_run_as_service_user(self) -> None:
         environment = {
             "AWS_API_LOADGEN_HOST": "api.example",

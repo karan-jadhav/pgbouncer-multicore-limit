@@ -3,7 +3,12 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import time
 from pathlib import Path
+
+
+COPY_ATTEMPTS = 5
+COPY_RETRY_DELAY_SECONDS = 5
 
 
 def private_key() -> str:
@@ -58,10 +63,17 @@ def copy_from(host: str, remote_path: str, local_path: Path, *, user: str = "ubu
         "-o",
         "StrictHostKeyChecking=accept-new",
     ]
-    subprocess.run(
-        [*command, f"{user}@{host}:{remote_path}", str(local_path)],
-        check=True,
-    )
+    for attempt in range(1, COPY_ATTEMPTS + 1):
+        try:
+            subprocess.run(
+                [*command, f"{user}@{host}:{remote_path}", str(local_path)],
+                check=True,
+            )
+            return
+        except subprocess.CalledProcessError:
+            if attempt == COPY_ATTEMPTS:
+                raise
+            time.sleep(COPY_RETRY_DELAY_SECONDS)
 
 
 def start_ssh(host: str, command: list[str], *, user: str = "ubuntu") -> subprocess.Popen[str]:

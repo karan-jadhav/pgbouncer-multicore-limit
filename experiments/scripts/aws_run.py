@@ -13,6 +13,7 @@ import tarfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 TERRAFORM_DIR = ROOT / "infra" / "terraform"
@@ -22,6 +23,7 @@ LOCAL = ROOT / ".local"
 PLAN = LOCAL / "aws-workers.tfplan"
 ARCHIVE = LOCAL / "aws-results.tar.gz"
 STATUS = RESULTS / "aws-run-status.json"
+CLEANUP_LOG = LOCAL / "aws-cleanup.log"
 
 MATRICES = [
     ROOT / "experiments" / "matrices" / "focused-baseline.yaml",
@@ -58,6 +60,39 @@ def run(command: list[str], environment: dict[str, str], *, output: Path | None 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w") as stream:
         subprocess.run(command, cwd=ROOT, env=environment, stdout=stream, check=True)
+
+
+def send_cleanup_notification(notifier: Any, message: str) -> None:
+    try:
+        notifier.send(message)
+    except Exception:
+        pass
+
+
+def destroy_infrastructure(environment: dict[str, str]) -> None:
+    CLEANUP_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with CLEANUP_LOG.open("a") as stream:
+        stream.write(f"+ {command_text(terraform('destroy', '-auto-approve', '-input=false'))}\n")
+        stream.flush()
+        subprocess.run(
+            terraform("destroy", "-auto-approve", "-input=false"),
+            cwd=ROOT,
+            env=environment,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            check=True,
+        )
+
+
+def cleanup_infrastructure(environment: dict[str, str], notifier: Any) -> str:
+    send_cleanup_notification(notifier, "Step started: Destroy worker infrastructure")
+    try:
+        destroy_infrastructure(environment)
+    except Exception as error:
+        send_cleanup_notification(notifier, "Worker infrastructure cleanup failed")
+        return f"failed: {type(error).__name__}"
+    send_cleanup_notification(notifier, "Step completed: Destroy worker infrastructure")
+    return "completed"
 
 
 def terraform(*arguments: str) -> list[str]:
@@ -347,17 +382,10 @@ def main() -> int:
             notifier.send(f"Step completed: {name}")
     except (Exception, KeyboardInterrupt) as error:
         experiment_error = f"{type(error).__name__}: {error}"
-        notifier.send(f"AWS experiment failed\n{experiment_error}")
+        send_cleanup_notification(notifier, f"AWS experiment failed\n{experiment_error}")
     finally:
         if apply_attempted:
-            notifier.send("Step started: Destroy worker infrastructure")
-            try:
-                run(terraform("destroy", "-auto-approve", "-input=false"), environment)
-                cleanup = "completed"
-                notifier.send("Step completed: Destroy worker infrastructure")
-            except Exception as error:
-                cleanup = f"failed: {type(error).__name__}"
-                notifier.send("Worker infrastructure cleanup failed")
+            cleanup = cleanup_infrastructure(environment, notifier)
 
         final_status = (
             "completed"
@@ -366,9 +394,10 @@ def main() -> int:
         )
         write_status(final_status, experiment_error, cleanup)
         archive_results()
-        notifier.send(
+        send_cleanup_notification(
+            notifier,
             f"AWS experiment {final_status}\nWorker cleanup: {cleanup}\n"
-            f"Results: {ARCHIVE}"
+            f"Results: {ARCHIVE}",
         )
 
     return 0 if experiment_error is None and not cleanup.startswith("failed") else 1
