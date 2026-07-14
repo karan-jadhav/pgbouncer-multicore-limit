@@ -1,3 +1,8 @@
+data_directory = '/var/lib/postgresql/{{ postgres_version }}/main'
+hba_file = '/etc/postgresql/{{ postgres_version }}/main/pg_hba.conf'
+ident_file = '/etc/postgresql/{{ postgres_version }}/main/pg_ident.conf'
+external_pid_file = '/var/run/postgresql/{{ postgres_version }}-main.pid'
+
 listen_addresses = '*'
 port = 5432
 max_connections = 160
@@ -18,7 +23,7 @@ log_connections = off
 log_disconnections = off
 log_checkpoints = on
 ssl = on
-ssl_ca_file = 'ca.crt'
-ssl_cert_file = 'server.crt'
-ssl_key_file = 'server.key'
+ssl_ca_file = '/etc/postgresql/{{ postgres_version }}/main/ca.crt'
+ssl_cert_file = '/etc/postgresql/{{ postgres_version }}/main/server.crt'
+ssl_key_file = '/etc/postgresql/{{ postgres_version }}/main/server.key'
 password_encryption = 'scram-sha-256'

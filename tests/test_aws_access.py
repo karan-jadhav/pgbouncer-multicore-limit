@@ -28,6 +28,22 @@ def load_inventory_module():
 
 
 class AwsAccessTests(unittest.TestCase):
+    def test_postgres_config_preserves_packaged_cluster_paths(self) -> None:
+        template = (
+            ROOT
+            / "infra/ansible/roles/postgres/templates/postgresql.conf.j2"
+        ).read_text()
+        for setting in (
+            "data_directory = '/var/lib/postgresql/{{ postgres_version }}/main'",
+            "hba_file = '/etc/postgresql/{{ postgres_version }}/main/pg_hba.conf'",
+            "ident_file = '/etc/postgresql/{{ postgres_version }}/main/pg_ident.conf'",
+            "external_pid_file = '/var/run/postgresql/{{ postgres_version }}-main.pid'",
+            "ssl_ca_file = '/etc/postgresql/{{ postgres_version }}/main/ca.crt'",
+            "ssl_cert_file = '/etc/postgresql/{{ postgres_version }}/main/server.crt'",
+            "ssl_key_file = '/etc/postgresql/{{ postgres_version }}/main/server.key'",
+        ):
+            self.assertIn(setting, template)
+
     def test_inventory_loads_required_password_variables(self) -> None:
         completed = subprocess.run(
             [
