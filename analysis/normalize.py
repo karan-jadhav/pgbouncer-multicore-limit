@@ -47,6 +47,9 @@ def normalize_run(run_dir: Path) -> dict[str, Any]:
     completed = int(counters.get("completed", 0))
     end_to_end = loadgen.get("histograms", {}).get("end_to_end", {})
     completion = loadgen.get("histograms", {}).get("completion", {})
+    process_path = run_dir / "raw" / "process.jsonl"
+    if not process_path.exists():
+        process_path = run_dir / "raw" / "process-pgbouncer.jsonl"
 
     return {
         "run_id": manifest["run_id"],
@@ -82,7 +85,7 @@ def normalize_run(run_dir: Path) -> dict[str, Any]:
         "latency_p95_us": end_to_end.get("p95_us"),
         "latency_p99_us": end_to_end.get("p99_us"),
         "export_completion_p95_us": completion.get("p95_us"),
-        "pgbouncer_cpu_percent": _process_cpu_percent(run_dir / "raw" / "process.jsonl"),
+        "pgbouncer_cpu_percent": _process_cpu_percent(process_path),
         "rejection_reason": manifest.get("rejection_reason"),
     }
 

@@ -229,6 +229,39 @@ If normal teardown cannot be used, `make emergency-stop` terminates EC2
 instances carrying the exact project tag. Terraform teardown is still required
 afterward to remove networking and other resources.
 
+## Automated focused AWS run
+
+Run the complete experiment from your laptop. Set the AWS profile, SSH key, and
+Telegram values in the ignored `.env`:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+```
+
+Authenticate the AWS CLI profile configured in `.env`, then start the run:
+
+```console
+$ aws login --profile "$AWS_PROFILE"
+$ make aws-run
+```
+
+Keep the laptop awake and connected until the command finishes. The automation
+sends Telegram notifications for every stage and individual run. It creates
+only the four measured workers, configures and seeds them, runs the focused
+matrices, copies and validates results locally, creates summaries and plots,
+and attempts `terraform destroy` for the complete worker stack on both success
+and failure. Results remain on the laptop in:
+
+```text
+.local/aws-results.tar.gz
+results/aws-run-status.json
+```
+
+The focused matrices schedule about 59 minutes of load; provisioning, package
+installation, dataset generation, topology changes, analysis, and cleanup bring
+the expected end-to-end time to roughly one to two hours.
+
 ## Development checks
 
 ```bash

@@ -1,0 +1,16 @@
+name: focused-main
+repeats: 3
+randomize: true
+randomization_seed: 3002
+defaults: {duration: 60, warmup: 20, tls_mode: verify-full, id_range_end: 20000000}
+runs:
+  - {id: api-c256-p1, mode: api, pgbouncer_processes: 1, total_pool_budget: 128, args: {model: closed-loop, connections: 256}}
+  - {id: api-c256-p2, mode: api, pgbouncer_processes: 2, total_pool_budget: 128, args: {model: closed-loop, connections: 256}}
+  - {id: api-c256-p4, mode: api, pgbouncer_processes: 4, total_pool_budget: 128, args: {model: closed-loop, connections: 256}}
+  - {id: api-c256-p8, mode: api, pgbouncer_processes: 8, total_pool_budget: 128, args: {model: closed-loop, connections: 256}}
+  - {id: api-c1024-p1, mode: api, pgbouncer_processes: 1, total_pool_budget: 128, args: {model: closed-loop, connections: 1024}}
+  - {id: api-c1024-p2, mode: api, pgbouncer_processes: 2, total_pool_budget: 128, args: {model: closed-loop, connections: 1024}}
+  - {id: api-c1024-p4, mode: api, pgbouncer_processes: 4, total_pool_budget: 128, args: {model: closed-loop, connections: 1024}}
+  - {id: api-c1024-p8, mode: api, pgbouncer_processes: 8, total_pool_budget: 128, args: {model: closed-loop, connections: 1024}}
+  - {id: mixed-shared, mode: mixed, topology: shared, pgbouncer_processes: 4, total_pool_budget: 128, args: {api_target_rate: 8000, export_concurrency: 4}}
+  - {id: mixed-isolated, mode: mixed, topology: isolated, pgbouncer_processes: 4, total_pool_budget: 128, args: {api_target_rate: 8000, export_concurrency: 4}}

@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: check-tools local-up local-up-tls local-up-isolated local-down local-reset local-logs local-smoke local-tls-smoke inventory \
 	build-loadgen test format lint validate-config infra-init infra-plan infra-up infra-down configure seed-data \
 	discover run-direct run-tls run-scaling run-mixed run-isolation run-cancellation run-operations \
-	run-fairness run-pool-multiplication validate-results summarize plots emergency-stop estimate-cost
+	run-fairness run-pool-multiplication aws-run validate-results summarize plots emergency-stop estimate-cost
 
 check-tools:
 	@command -v docker >/dev/null
@@ -106,6 +106,9 @@ run-pool-multiplication:
 
 run-operations:
 	uv run experiments/scripts/aws_operations.py --help
+
+aws-run:
+	uv run experiments/scripts/aws_run.py
 
 validate-results:
 	uv run analysis/validate_runs.py results

@@ -1,0 +1,8 @@
+name: focused-baseline
+repeats: 1
+defaults: {duration: 60, warmup: 20, tls_mode: verify-full, seed: 3001}
+runs:
+  - {id: direct-api-64, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 64, id_range_end: 20000000}}
+  - {id: direct-api-256, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 256, id_range_end: 20000000}}
+  - {id: direct-api-512, mode: api, endpoint: postgres, args: {model: closed-loop, connections: 512, id_range_end: 20000000}}
+  - {id: direct-export-4, mode: export, endpoint: postgres, args: {concurrency: 4}}

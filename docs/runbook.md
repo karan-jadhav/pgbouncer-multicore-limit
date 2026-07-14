@@ -50,3 +50,14 @@ three repeats. Increase to five repeats when variation exceeds 3%.
 2. Run `make infra-down`.
 3. Confirm the Terraform state contains no managed resources.
 4. Confirm no project-tagged EC2 instance remains.
+
+## Automated focused AWS run
+
+1. Configure the ignored `.env`, Terraform tfvars, SSH key, Telegram bot token,
+   and Telegram chat ID on the laptop.
+2. Ensure the repository is clean.
+3. Run `aws login --profile "$AWS_PROFILE"`.
+4. Run `make aws-run` and keep the laptop awake and connected.
+5. Wait for the final Telegram notification.
+6. Confirm `.local/aws-results.tar.gz` exists.
+7. Confirm `results/aws-run-status.json` reports completed worker cleanup.

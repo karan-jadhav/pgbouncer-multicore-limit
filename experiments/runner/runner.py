@@ -21,6 +21,7 @@ import yaml
 from manifest import RunManifest, hash_tree, sha256_file
 from remote import copy_from, run_ssh, start_ssh
 from state import RunState
+from telegram import TelegramNotifier
 from validation import validate_aws_collectors, validate_loadgen
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -518,6 +519,7 @@ def run_one(
     run: dict[str, Any],
     repeat: int,
     args: argparse.Namespace,
+    notifier: TelegramNotifier | None = None,
 ) -> tuple[str, bool]:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     run_id = f"{timestamp}-{run['id']}-r{repeat}"
@@ -555,6 +557,12 @@ def run_one(
         metadata={"state": RunState.CREATED, "run_definition": run},
     )
     manifest.write(running_dir / "manifest.json")
+
+    if notifier is not None and not args.dry_run:
+        notifier.send(
+            f"Run started\nMatrix: {matrix['name']}\nRun: {run['id']}\n"
+            f"Repeat: {repeat}\nMode: {mode}"
+        )
 
     if args.dry_run:
         print(" ".join([str(args.loadgen), *cli_args(run, defaults, raw_dir / "loadgen.json", run_id, args.environment)]))
@@ -653,12 +661,21 @@ def run_one(
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(running_dir), destination)
     print(f"{manifest.status}: {run_id}" + (f" ({manifest.rejection_reason})" if reasons else ""))
+    if notifier is not None:
+        message = (
+            f"Run {manifest.status}\nMatrix: {matrix['name']}\nRun: {run['id']}\n"
+            f"Repeat: {repeat}"
+        )
+        if reasons:
+            message += f"\nReason: {manifest.rejection_reason[:3000]}"
+        notifier.send(message)
     return run_id, accepted
 
 
 def main() -> int:
     args = parse_args()
     load_local_env()
+    notifier = TelegramNotifier.from_env()
     matrix = yaml.safe_load(args.matrix.read_text())
     if not args.dry_run and args.environment == "local" and not args.loadgen.is_file():
         raise SystemExit(f"load generator not found: {args.loadgen}; run make build-loadgen")
@@ -670,7 +687,7 @@ def main() -> int:
         if matrix.get("randomize", False):
             random.Random(seed + repeat).shuffle(runs)
         for run in runs:
-            outcomes.append(run_one(matrix, run, repeat, args))
+            outcomes.append(run_one(matrix, run, repeat, args, notifier))
             time.sleep(float(matrix.get("cooldown_seconds", 0)))
     return 0 if all(accepted for _, accepted in outcomes) else 1
 
