@@ -1,20 +1,15 @@
 # PgBouncer Multicore Limit
 
-This repository builds a controlled experiment for finding when a single
-PgBouncer process becomes the connection-layer bottleneck, measuring how
-multiple `SO_REUSEPORT` processes scale with a fixed PostgreSQL connection
-budget, and testing whether isolating bulk exports protects API tail latency.
+This repository reproduces an experiment around PgBouncer's single-process CPU
+limit. It measures how 1, 2, 4, and 8 processes scale while the total
+PostgreSQL connection budget stays fixed.
 
-It has two execution paths:
-
-- Docker Compose runs a scaled-down functional experiment on a laptop.
-- Terraform and Ansible provision the final AWS topology when explicitly run.
+Run the functional experiment locally with Docker Compose or run the measured
+version on AWS using Terraform and Ansible.
 
 No AWS resource is created by setup, tests, Docker commands, `terraform init`,
 or `terraform validate`. AWS creation begins only when you explicitly run
 `make infra-up` and approve the Terraform apply.
-
-Article and social-post writing are intentionally out of scope.
 
 ## Local quick start
 
@@ -95,6 +90,27 @@ and complete serialized HDR histograms. Export mode records byte counts,
 SHA-256 checksums, first-byte latency, completion latency, and pacing time.
 
 ## Results
+
+The completed focused AWS run used 256 persistent clients, TLS on both
+PostgreSQL protocol legs, and a fixed combined PostgreSQL pool budget of 128.
+The table reports the median of three randomized 60-second measurements:
+
+| PgBouncer processes | Queries/sec | Speedup | Closed-loop p99 |
+|---:|---:|---:|---:|
+| 1 | 45,122 | 1.00x | 8.19 ms |
+| 2 | 80,788 | 1.79x | 4.57 ms |
+| 4 | 153,369 | 3.40x | 2.76 ms |
+| 8 | 209,779 | 4.65x | 2.36 ms |
+
+One PgBouncer process filled one CPU core while the PostgreSQL host was at
+about 22% CPU. At eight processes, PostgreSQL reached about 97% CPU, so the
+bottleneck had moved from the proxy layer to the database. Direct PostgreSQL
+reached 345,769 queries/sec at 256 clients in a single baseline run; PgBouncer
+improved the capacity of the pooled architecture but did not outperform the
+direct path.
+
+Read the full methodology, analysis, and limitations in
+[PgBouncer: From 45K to 210K Queries per Second](https://jadhav.dev/blog/pgbouncer-multicore-limit/pgbouncer-from-45k-to-210k-queries-per-second).
 
 Every run is stored under one of these paths:
 
@@ -274,5 +290,5 @@ make validate-config
 `make validate-config` does not create infrastructure. Terraform must have been
 initialized once so its provider schema is available locally.
 
-See [plan.md](plan.md) for the research design and [docs/runbook.md](docs/runbook.md)
-for the run sequence and acceptance gates.
+See [docs/runbook.md](docs/runbook.md) for the run sequence and acceptance
+gates.
